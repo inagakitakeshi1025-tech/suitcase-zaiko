@@ -112,7 +112,7 @@ function renderInventory(list) {
           <span class="inv-total">合計在庫<strong>${total}</strong></span>
         </div>
         <div class="inv-name">${item.partName ?? ""}</div>
-        <div class="inv-sub">${item.partNo ?? ""} ・ バーコード:${item.barcode ?? ""}</div>
+        <div class="inv-sub">${item.partNo ?? ""} ・ バーコード:${item.barcode ?? ""}${item.unit ? ` ・ 単位:${item.unit}` : ""}</div>
         <div class="store-stock-list">${storeRows}</div>
         <button type="button" class="add-to-cart-btn">＋ 出庫/入庫の明細に追加</button>
       </div>
@@ -305,6 +305,7 @@ function renderCart(target) {
     tr.innerHTML = `
       <td>${row.partNo}</td>
       <td>${row.partName}</td>
+      <td>${row.unit ?? ""}</td>
       <td><input type="number" class="cart-qty-input" min="1" value="${row.qty}" data-idx="${idx}"></td>
       <td><button type="button" class="remove-btn" data-idx="${idx}">削除</button></td>
     `;
