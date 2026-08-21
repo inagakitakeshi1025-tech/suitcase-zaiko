@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在庫管理(動作確認用プロトタイプ)</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>在庫管理 <span class="badge">動作確認用プロトタイプ</span></h1>
+</header>
+
+<main class="layout">
+  <section id="list-col" class="list-col">
+    <div class="toolbar">
+      <select id="category-select">
+        <option value="">全カテゴリ</option>
+      </select>
+      <input type="text" id="search-box" placeholder="パーツ番号・パーツ名・バーコードで検索">
+      <button type="button" id="barcode-scan-btn" title="カメラでバーコードを読み取る">📷 バーコード読取</button>
+      <select id="stock-filter-select">
+        <option value="">すべて表示</option>
+        <option value="low">⚠ 適正在庫以下のみ表示</option>
+      </select>
+      <label class="threshold-label">アラート閾値
+        <input type="number" id="threshold-input" value="10" min="0">
+      </label>
+      <button id="reload-btn">再読み込み</button>
+      <span id="list-status" class="status"></span>
+    </div>
+    <div id="inventory-list" class="inventory-list"></div>
+  </section>
+
+  <div id="form-backdrop" class="form-backdrop"></div>
+  <aside id="form-col" class="form-col">
+    <div class="record-form">
+      <div class="drawer-header">
+        <h2>出庫・入庫登録</h2>
+        <button type="button" id="form-drawer-close-btn" class="drawer-close-btn">✕ 閉じる</button>
+      </div>
+      <div class="field">
+        <label>日付</label>
+        <input type="date" id="reg-date" required>
+      </div>
+      <div class="field">
+        <label>店舗</label>
+        <select id="reg-store" class="store-select" required>
+          <option value="">選択してください</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>担当者(入庫登録時のみ使用)</label>
+        <input type="text" id="reg-tantosha" placeholder="例: 山田">
+      </div>
+
+      <p class="hint">左の在庫一覧で目的のパーツを検索し、「＋ 出庫/入庫の明細に追加」から明細に追加してください。</p>
+
+      <h3>登録予定の明細(<span id="reg-cart-count">0</span>件)</h3>
+      <div class="cart-table-wrap">
+        <table class="cart-table">
+          <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>数量</th><th></th></tr></thead>
+          <tbody id="reg-cart-body"></tbody>
+        </table>
+      </div>
+      <button type="button" id="reg-shukko-submit-btn" class="submit-btn">この内容でまとめて出庫登録する</button>
+      <button type="button" id="reg-nyuko-submit-btn" class="submit-btn submit-btn-secondary">この内容でまとめて入庫登録する</button>
+      <p id="reg-result" class="result"></p>
+    </div>
+  </aside>
+
+  <div id="mobile-cart-bar" class="mobile-cart-bar">
+    <span id="mobile-cart-text">明細 0件</span>
+    <button type="button" id="mobile-cart-open-btn">🛒 出庫・入庫を開く</button>
+  </div>
+</main>
+
+<div id="image-modal" class="modal-overlay" style="display:none;">
+  <div class="image-modal-inner">
+    <img id="image-modal-img" src="" alt="パーツ画像拡大">
+  </div>
+</div>
+
+<div id="scanner-modal" class="modal-overlay" style="display:none;">
+  <div class="scanner-modal-inner">
+    <h3>バーコード読み取り</h3>
+    <video id="scanner-video" autoplay playsinline muted></video>
+    <p id="scanner-hint" class="hint">カメラをバーコードにかざしてください</p>
+    <button type="button" id="scanner-close-btn">閉じる</button>
+  </div>
+</div>
+
+<script src="/vendor/zxing.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

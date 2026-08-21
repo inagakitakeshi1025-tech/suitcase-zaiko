@@ -1,0 +1,624 @@
+:root {
+  --accent: #159089;
+  --accent-dark: #0d6b65;
+  --accent-soft: #e3f4f2;
+  --bg: #faf6ee;
+  --card-bg: #ffffff;
+  --border: #ece4d2;
+  --tag-bg: #f1ece0;
+  --tag-orange: #f3a24a;
+  --tag-orange-bg: #fdeedc;
+  --alert-bg: #fbe3e1;
+  --alert-text: #b3352c;
+  --text: #2d2a24;
+  --muted: #8b8477;
+}
+
+* { box-sizing: border-box; }
+
+/* iOSのSafariは文字サイズ16px未満の入力欄にフォーカスすると自動的に画面をズームインする仕様があり、
+   これが「ピンチ操作前提に見える」原因の一つになっていたため、フォーム部品は16px以上に統一する。 */
+input, select, textarea, button {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  background: linear-gradient(135deg, var(--accent-dark), var(--accent));
+  color: #fff;
+  padding: 18px 24px;
+}
+
+header h1 {
+  margin: 0 0 14px 0;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge {
+  font-size: 11px;
+  background: rgba(255,255,255,0.25);
+  color: #fff;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: bold;
+}
+
+main {
+  padding: 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.list-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-col {
+  width: 360px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 24px;
+  /* 在庫一覧が長くなっても、登録フォームの中身(特に一番下の登録ボタン)は
+     一覧のスクロール量に引きずられず、常に短いスクロールで届くようにする。
+     フォーム自体の高さを画面の高さ以内に収め、はみ出す分だけフォーム内部でスクロールさせる。 */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.mobile-cart-bar { display: none; }
+.form-backdrop { display: none; }
+.drawer-close-btn { display: none; }
+.drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* スマホ幅では出庫・入庫フォームを「通販アプリのカート」のように画面下からせり上がるシートにする。
+   一覧をどれだけスクロールしていても、下部のバーから常に1タップでフォームへ到達できるようにするため。 */
+@media (max-width: 960px) {
+  .layout { flex-direction: column; }
+
+  main { padding-bottom: 76px; }
+
+  .form-col {
+    display: none;
+    width: 100%;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 82vh;
+    overflow-y: auto;
+    background: var(--bg);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -6px 20px rgba(30, 24, 10, 0.25);
+    padding: 10px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 920;
+  }
+  .form-col.is-open { display: block; }
+
+  .record-form { box-shadow: none; border-radius: 0; padding: 4px; }
+
+  .drawer-close-btn {
+    display: inline-block;
+    padding: 6px 12px;
+    background: var(--tag-bg);
+    color: var(--text);
+    border: none;
+    border-radius: 20px;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  .form-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 16, 8, 0.45);
+    z-index: 910;
+  }
+  .form-backdrop.is-open { display: block; }
+
+  .mobile-cart-bar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--accent-dark);
+    color: #fff;
+    z-index: 900;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+  }
+  .mobile-cart-bar span { font-size: 14px; font-weight: 600; }
+  .mobile-cart-bar button {
+    padding: 10px 18px;
+    background: #fff;
+    color: var(--accent-dark);
+    border: none;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  main { padding: 12px; }
+  header { padding: 14px 16px; }
+  header h1 { font-size: 17px; }
+
+  /* ツールバーの各部品を1行ずつ縦積みにし、指でタップしやすい大きさ・間隔にする */
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .toolbar > * { width: 100%; }
+  .threshold-label { justify-content: space-between; }
+
+  .inv-card { padding: 12px; gap: 10px; }
+  .inv-thumb, .inv-thumb.placeholder { width: 76px; height: 76px; }
+
+  .add-to-cart-btn { width: 100%; }
+
+  .cart-table-wrap { overflow-x: auto; }
+}
+
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+#search-box {
+  flex: 1;
+  min-width: 180px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 14px;
+  background: #fff;
+}
+
+button { cursor: pointer; }
+
+#reload-btn {
+  padding: 9px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+#reload-btn:hover { background: var(--accent-dark); }
+
+.status { color: var(--muted); font-size: 13px; }
+
+/* ===== 在庫一覧カード ===== */
+.inventory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inv-card {
+  display: flex;
+  gap: 14px;
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 1px 4px rgba(60,50,20,0.08);
+}
+
+.inv-thumb {
+  width: 96px;
+  height: 96px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: var(--tag-bg);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: zoom-in;
+}
+
+.inv-thumb.placeholder {
+  border: 1px dashed var(--border);
+}
+
+.inv-body { flex: 1; min-width: 0; }
+
+.inv-title-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inv-total {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.inv-total strong {
+  display: block;
+  font-size: 20px;
+  color: var(--accent-dark);
+  line-height: 1.1;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.tag-category {
+  background: var(--tag-bg);
+  color: #6b6250;
+}
+
+.tag-threshold {
+  background: var(--tag-orange-bg);
+  color: var(--tag-orange);
+}
+
+.tag-noalert {
+  background: var(--tag-bg);
+  color: var(--muted);
+}
+
+.inv-name {
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--text);
+}
+
+.inv-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.store-stock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.store-stock-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: #faf8f2;
+  border-radius: 8px;
+}
+
+.store-stock-row.is-low {
+  background: var(--alert-bg);
+}
+
+.store-name {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.store-stock-row.is-low .store-name { color: var(--alert-text); }
+
+.store-qty-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.store-qty {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--text);
+}
+
+.store-stock-row.is-low .store-qty { color: var(--alert-text); }
+
+.edit-stock-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 5px;
+  border-radius: 3px;
+}
+
+.edit-stock-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.stock-edit-box {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.stock-edit-input {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.stock-save-btn, .stock-cancel-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stock-save-btn {
+  background: var(--accent);
+  color: #fff;
+}
+.stock-save-btn:hover { background: var(--accent-dark); }
+
+.stock-cancel-btn {
+  background: #eee;
+  color: var(--muted);
+}
+.stock-cancel-btn:hover { background: #ddd; }
+
+select.store-select,
+#category-select,
+#stock-filter-select {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.add-to-cart-btn {
+  margin-top: 10px;
+  padding: 7px 12px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.add-to-cart-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cart-qty-input {
+  width: 56px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.threshold-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.threshold-label input {
+  width: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+/* ===== 出庫/入庫登録フォーム ===== */
+.record-form {
+  background: var(--card-bg);
+  padding: 20px;
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(60,50,20,0.08);
+}
+
+.record-form h2 {
+  font-size: 16px;
+  color: var(--accent-dark);
+  margin: 0 0 14px 0;
+}
+
+.record-form h3 {
+  font-size: 14px;
+  color: var(--accent-dark);
+  margin: 18px 0 8px 0;
+}
+
+.field {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field input, .field select {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 0 0;
+}
+
+.muted { color: var(--muted); font-size: 12px; }
+
+.cart-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+
+.cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.cart-table th, .cart-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  text-align: left;
+}
+
+.cart-table th {
+  background: var(--tag-bg);
+  color: var(--accent-dark);
+}
+
+.remove-btn {
+  padding: 4px 10px;
+  background: #fff;
+  border: 1px solid #d9534f;
+  color: #d9534f;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.remove-btn:hover { background: #d9534f; color: #fff; }
+
+.submit-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent-dark);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  margin-top: 4px;
+}
+
+.submit-btn:hover { background: #094d49; }
+
+.submit-btn-secondary {
+  margin-top: 8px;
+  background: var(--accent);
+}
+
+.submit-btn-secondary:hover { background: var(--accent-dark); }
+
+.result {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.result.ok { color: #1a7f37; }
+.result.error { color: #c1272d; }
+
+/* ===== バーコード読取ボタン ===== */
+#barcode-scan-btn {
+  padding: 9px 14px;
+  background: var(--accent-dark);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+#barcode-scan-btn:hover { background: #094d49; }
+
+/* ===== モーダル(画像拡大・バーコード読取) ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 16, 8, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.image-modal-inner {
+  max-width: min(90vw, 640px);
+  max-height: 90vh;
+}
+
+.image-modal-inner img {
+  max-width: 100%;
+  max-height: 90vh;
+  border-radius: 12px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.scanner-modal-inner {
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 20px;
+  width: min(92vw, 480px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.scanner-modal-inner h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--accent-dark);
+  align-self: flex-start;
+}
+
+#scanner-video {
+  width: 100%;
+  border-radius: 10px;
+  background: #000;
+}
+
+.scanner-modal-inner #scanner-close-btn {
+  padding: 9px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+.scanner-modal-inner #scanner-close-btn:hover { background: var(--accent-dark); }
