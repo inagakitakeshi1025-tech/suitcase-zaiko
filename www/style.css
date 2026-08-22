@@ -99,7 +99,10 @@ main {
 @media (max-width: 960px) {
   .layout { flex-direction: column; }
 
-  main { padding-bottom: 76px; }
+  /* iPhoneのホームバー分(env(safe-area-inset-bottom))を含めないと、下部固定の
+     mobile-cart-barの実際の高さがpadding-bottomより大きくなり、一覧最後のカードの
+     ボタンがバーの下に隠れてタップできなくなる。 */
+  main { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 
   .form-col {
     display: none;
