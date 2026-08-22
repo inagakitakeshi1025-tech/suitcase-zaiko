@@ -337,6 +337,13 @@ button { cursor: pointer; }
 }
 
 .store-name {
+  /* flexの初期値では店舗名側が最小幅まで縮んで縦長に折り返され、
+     右側(在庫数)との間に不自然な余白ができるため、幅を確保して折り返しを防ぐ。 */
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--muted);
 }
@@ -347,6 +354,7 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .store-qty {
