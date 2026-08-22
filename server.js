@@ -17,6 +17,13 @@ if (!BASIC_AUTH_USER || !BASIC_AUTH_PASSWORD) {
   throw new Error("環境変数 BASIC_AUTH_USER / BASIC_AUTH_PASSWORD が設定されていません。");
 }
 
+// ブラウザ標準のBasic認証ダイアログはiPhone(Safari)やLINEなどアプリ内ブラウザで
+// 正しく動かないことがあるため、通常のログインフォーム+Cookieセッションに置き換えている。
+// 署名鍵は専用のSESSION_SECRETを推奨するが、未設定でも動くようパスワードから導出する。
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.createHash("sha256").update(BASIC_AUTH_PASSWORD).digest("hex");
+const SESSION_COOKIE = "zaiko_session";
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30日間はログインし直さなくていいようにする
+
 function timingSafeStringEqual(a, b) {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -24,28 +31,86 @@ function timingSafeStringEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+function signSession(expiresAt) {
+  const hmac = crypto.createHmac("sha256", SESSION_SECRET).update(String(expiresAt)).digest("hex");
+  return `${expiresAt}.${hmac}`;
+}
+
+function isValidSessionToken(token) {
+  if (!token) return false;
+  const dotIdx = token.indexOf(".");
+  if (dotIdx === -1) return false;
+  const expiresAtStr = token.slice(0, dotIdx);
+  const hmac = token.slice(dotIdx + 1);
+  const expiresAt = Number(expiresAtStr);
+  if (!expiresAt || Date.now() > expiresAt) return false;
+  const expected = crypto.createHmac("sha256", SESSION_SECRET).update(expiresAtStr).digest("hex");
+  return hmac.length === expected.length && timingSafeStringEqual(hmac, expected);
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  const cookies = {};
+  if (!header) return cookies;
+  header.split(";").forEach((part) => {
+    const idx = part.indexOf("=");
+    if (idx === -1) return;
+    cookies[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+  });
+  return cookies;
+}
+
+function isRequestSecure(req) {
+  return req.secure || req.headers["x-forwarded-proto"] === "https";
+}
+
 const app = express();
 app.disable("x-powered-by");
 
-// アプリ全体にかかる簡易パスワード認証(社外にURLを公開する際の最低限のアクセス制限)。
-app.use((req, res, next) => {
-  const auth = req.headers.authorization || "";
-  if (auth.startsWith("Basic ")) {
-    const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
-    const idx = decoded.indexOf(":");
-    if (idx >= 0) {
-      const user = decoded.slice(0, idx);
-      const pass = decoded.slice(idx + 1);
-      if (timingSafeStringEqual(user, BASIC_AUTH_USER) && timingSafeStringEqual(pass, BASIC_AUTH_PASSWORD)) {
-        return next();
-      }
-    }
-  }
-  res.set("WWW-Authenticate", 'Basic realm="Zaiko"');
-  res.status(401).send("Authentication required");
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+app.get("/login", (req, res) => {
+  const cookies = parseCookies(req);
+  if (isValidSessionToken(cookies[SESSION_COOKIE])) return res.redirect("/");
+  res.sendFile(path.join(wwwRoot, "login.html"));
 });
 
-app.use(express.json());
+app.post("/login", (req, res) => {
+  const { username, password } = req.body || {};
+  if (
+    typeof username === "string" &&
+    typeof password === "string" &&
+    timingSafeStringEqual(username, BASIC_AUTH_USER) &&
+    timingSafeStringEqual(password, BASIC_AUTH_PASSWORD)
+  ) {
+    const expiresAt = Date.now() + SESSION_MAX_AGE_MS;
+    res.cookie(SESSION_COOKIE, signSession(expiresAt), {
+      httpOnly: true,
+      secure: isRequestSecure(req),
+      sameSite: "lax",
+      maxAge: SESSION_MAX_AGE_MS,
+      path: "/",
+    });
+    return res.redirect("/");
+  }
+  res.redirect("/login?error=1");
+});
+
+app.get("/logout", (req, res) => {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.redirect("/login");
+});
+
+// アプリ全体にかかる簡易パスワード認証(社外にURLを公開する際の最低限のアクセス制限)。
+app.use((req, res, next) => {
+  const cookies = parseCookies(req);
+  if (isValidSessionToken(cookies[SESSION_COOKIE])) return next();
+  if (req.path.startsWith("/api/")) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+  res.redirect("/login");
+});
 
 app.get("/api/inventory", async (req, res) => {
   try {
