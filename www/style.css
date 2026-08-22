@@ -171,7 +171,9 @@ main {
 }
 
 @media (max-width: 640px) {
-  main { padding: 12px; }
+  /* 960px幅向けのpadding-bottom(下部固定バー分の余白)を上書きしないよう、
+     bottom以外だけをここで指定する。 */
+  main { padding: 12px 12px calc(84px + env(safe-area-inset-bottom, 0px)); }
   header { padding: 14px 16px; }
   header h1 { font-size: 17px; }
 
