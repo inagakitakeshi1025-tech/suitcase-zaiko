@@ -23,8 +23,10 @@
       <select id="stock-filter-select">
         <option value="">すべて表示</option>
         <option value="low">⚠ 適正在庫以下のみ表示</option>
+        <option value="low-store">⚠ スーツケース救急車のみ閾値割れ</option>
+        <option value="low-toyota">⚠ 豊田倉庫のみ閾値割れ</option>
       </select>
-      <label class="threshold-label">アラート閾値
+      <label class="threshold-label" title="個別設定が無いパーツの救急車側閾値に使われます(豊田倉庫には使われません)">アラート閾値(救急車・未設定分)
         <input type="number" id="threshold-input" value="10" min="0">
       </label>
       <button id="reload-btn">再読み込み</button>

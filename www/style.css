@@ -348,6 +348,15 @@ button { cursor: pointer; }
   color: var(--muted);
 }
 
+.store-threshold {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.store-stock-row.is-low .store-threshold { color: var(--alert-text); }
+
 .store-stock-row.is-low .store-name { color: var(--alert-text); }
 
 .store-qty-wrap {

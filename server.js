@@ -85,10 +85,15 @@ app.post("/login", (req, res) => {
     timingSafeStringEqual(password, BASIC_AUTH_PASSWORD)
   ) {
     const expiresAt = Date.now() + SESSION_MAX_AGE_MS;
+    const secure = isRequestSecure(req);
     res.cookie(SESSION_COOKIE, signSession(expiresAt), {
       httpOnly: true,
-      secure: isRequestSecure(req),
-      sameSite: "lax",
+      secure,
+      // LINE返信アシスタントの受信一覧からiframeで埋め込んで開くと、ブラウザから見て
+      // このアプリは常に第三者コンテキストになる。SameSite=Laxのままだとログイン後の
+      // Cookieが保存/送信されず、ログイン画面に戻り続けるループになるためNoneにする
+      // (Noneはブラウザ仕様上Secure必須なので、https以外ではLaxにフォールバックする)。
+      sameSite: secure ? "none" : "lax",
       maxAge: SESSION_MAX_AGE_MS,
       path: "/",
     });

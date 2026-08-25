@@ -32,21 +32,44 @@ async function loadCategories() {
   }
 }
 
-// アイテムの実効閾値(個別の「適正在庫数」があればそれを優先、無ければ画面上部の共通閾値)。
-// 適正在庫数が0のパーツは「在庫0のままでよい」という意味として扱い、常にアラート対象外にする。
-function getEffectiveThreshold(item, commonThreshold) {
-  return (item.threshold ?? null) !== null ? item.threshold : commonThreshold;
+// アイテムの店舗別・実効閾値。
+// ・スーツケース救急車: 個別の「適正在庫数」があればそれを優先、無ければ画面上部の共通閾値。
+// ・豊田倉庫: 個別の「適正在庫数_豊田用」があればそれを使い、未設定なら常にアラート対象外(共通閾値は使わない)。
+// どちらも閾値が0のパーツは「在庫0のままでよい」という意味として扱い、常にアラート対象外にする。
+function getEffectiveThreshold(item, store, commonThreshold) {
+  const t = item.threshold?.[store] ?? null;
+  if (t !== null) return t;
+  return store === "豊田倉庫" ? null : commonThreshold;
+}
+
+// 閾値がnull(アラート対象外)の店舗は常にfalse。
+function isStoreLow(item, store, commonThreshold) {
+  const threshold = getEffectiveThreshold(item, store, commonThreshold);
+  if (threshold === null) return false;
+  return (item.stocks?.[store] ?? 0) < threshold;
 }
 
 function isItemLow(item, commonThreshold) {
-  const threshold = getEffectiveThreshold(item, commonThreshold);
-  return STORES.some(store => (item.stocks?.[store] ?? 0) < threshold);
+  return STORES.some(store => isStoreLow(item, store, commonThreshold));
+}
+
+// 指定した店舗「だけ」が閾値割れで、他の店舗はすべて正常なアイテムかどうか。
+function isOnlyStoreLow(item, targetStore, commonThreshold) {
+  return STORES.every(store =>
+    store === targetStore ? isStoreLow(item, store, commonThreshold) : !isStoreLow(item, store, commonThreshold)
+  );
+}
+
+// 在庫数-閾値。閾値がnull(アラート対象外)の店舗はソート順の末尾に回るようInfinityを返す。
+function storeMargin(item, store, commonThreshold) {
+  const threshold = getEffectiveThreshold(item, store, commonThreshold);
+  if (threshold === null) return Infinity;
+  return (item.stocks?.[store] ?? 0) - threshold;
 }
 
 // 「どれだけ適正在庫を下回っているか」が大きい(マイナスが大きい)ものほど先頭に来るようにする。
 function lowestMargin(item, commonThreshold) {
-  const threshold = getEffectiveThreshold(item, commonThreshold);
-  return Math.min(...STORES.map(store => (item.stocks?.[store] ?? 0) - threshold));
+  return Math.min(...STORES.map(store => storeMargin(item, store, commonThreshold)));
 }
 
 function applyInventoryFilter() {
@@ -66,6 +89,12 @@ function applyInventoryFilter() {
   if (stockFilter === "low") {
     list = list.filter(item => isItemLow(item, commonThreshold));
     list = [...list].sort((a, b) => lowestMargin(a, commonThreshold) - lowestMargin(b, commonThreshold));
+  } else if (stockFilter === "low-store") {
+    list = list.filter(item => isOnlyStoreLow(item, "スーツケース救急車", commonThreshold));
+    list = [...list].sort((a, b) => storeMargin(a, "スーツケース救急車", commonThreshold) - storeMargin(b, "スーツケース救急車", commonThreshold));
+  } else if (stockFilter === "low-toyota") {
+    list = list.filter(item => isOnlyStoreLow(item, "豊田倉庫", commonThreshold));
+    list = [...list].sort((a, b) => storeMargin(a, "豊田倉庫", commonThreshold) - storeMargin(b, "豊田倉庫", commonThreshold));
   }
   renderInventory(list);
 }
@@ -76,26 +105,20 @@ function renderInventory(list) {
   container.innerHTML = "";
 
   for (const item of list) {
-    const threshold = getEffectiveThreshold(item, commonThreshold);
     const imgSrc = item.imageFileKey ? `/api/image?fileKey=${encodeURIComponent(item.imageFileKey)}` : "";
 
     const card = document.createElement("div");
     card.className = "inv-card";
 
-    let thresholdTag = "";
-    if (item.threshold !== null && item.threshold !== undefined) {
-      thresholdTag = item.threshold === 0
-        ? `<span class="tag tag-noalert">アラート対象外</span>`
-        : `<span class="tag tag-threshold">適正在庫 ${item.threshold}</span>`;
-    }
-
     const total = STORES.reduce((sum, store) => sum + (item.stocks?.[store] ?? 0), 0);
 
     const storeRows = STORES.map(store => {
+      const threshold = getEffectiveThreshold(item, store, commonThreshold);
       const qty = item.stocks?.[store] ?? 0;
-      const isLow = qty < threshold;
+      const isLow = threshold !== null && qty < threshold;
+      const thresholdText = threshold !== null ? `適正在庫 ${threshold}` : "アラート対象外";
       return `<div class="store-stock-row ${isLow ? 'is-low' : ''}" data-barcode="${item.barcode}" data-store="${store}" data-partno="${item.partNo ?? ''}" data-partname="${item.partName ?? ''}">
-        <span class="store-name">${store}</span>
+        <span class="store-name">${store}<span class="store-threshold">${thresholdText}</span></span>
         <span class="store-qty-wrap">
           <span class="store-qty">${qty}${isLow ? ' ⚠' : ''}</span>
           <button type="button" class="edit-stock-btn" title="実数を入力して修正">✏️</button>
@@ -108,7 +131,6 @@ function renderInventory(list) {
       <div class="inv-body">
         <div class="inv-title-row">
           <span class="tag tag-category">${item.category ?? ""}</span>
-          ${thresholdTag}
           <span class="inv-total">合計在庫<strong>${total}</strong></span>
         </div>
         <div class="inv-name">${item.partName ?? ""}</div>

@@ -20,6 +20,13 @@ for (const key of APP_KEYS) {
 // 対象の2店舗(在庫を分けて表示する単位)。店舗マスタが増えたら合わせて増やす想定。
 const STORES = ["スーツケース救急車", "豊田倉庫"];
 
+// 店舗ごとにアラート閾値(適正在庫数)を別フィールドで持つ。豊田倉庫は未入力なら
+// 常にアラート対象外(店舗側のような共通閾値へのフォールバックはしない)。
+const THRESHOLD_FIELD_BY_STORE = {
+  "スーツケース救急車": "適正在庫数",
+  "豊田倉庫": "適正在庫数_豊田用",
+};
+
 // パーツ番号のプレフィックス(ハイフンより前)からカテゴリ名を判定する。
 const CATEGORY_MAP = {
   A: "A-キャスター",
@@ -101,11 +108,13 @@ async function getInventoryList() {
     unitByBarcode[masterBc] = r["単位・袋分け用"]?.value;
     const images = r["パーツ画像"]?.value;
     if (images && images.length > 0) imageFileKeyByBarcode[masterBc] = images[0].fileKey;
-    // 「適正在庫数」はパーツごとの個別アラート閾値(未設定のパーツもある)。0は「アラート対象外」の意味。
-    const thresholdVal = r["適正在庫数"]?.value;
-    if (thresholdVal !== null && thresholdVal !== undefined && thresholdVal !== "") {
-      thresholdByBarcode[masterBc] = Number(thresholdVal);
+    // 店舗ごとのアラート閾値(未設定のパーツもある)。0は「アラート対象外」の意味。
+    const thresholds = {};
+    for (const store of STORES) {
+      const thresholdVal = r[THRESHOLD_FIELD_BY_STORE[store]]?.value;
+      thresholds[store] = thresholdVal !== null && thresholdVal !== undefined && thresholdVal !== "" ? Number(thresholdVal) : null;
     }
+    thresholdByBarcode[masterBc] = thresholds;
   }
 
   // キー: "店舗名|バーコード番号"
@@ -163,7 +172,7 @@ async function getInventoryList() {
       barcode: bc,
       unit: unitByBarcode[bc] ?? null,
       category: getCategoryFromPartNo(partNo),
-      threshold: bc in thresholdByBarcode ? thresholdByBarcode[bc] : null,
+      threshold: thresholdByBarcode[bc] ?? Object.fromEntries(STORES.map((s) => [s, null])),
       imageFileKey: imageFileKeyByBarcode[bc] ?? null,
       stocks,
     };
