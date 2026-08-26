@@ -28,25 +28,26 @@ const STORES = ["スーツケース救急車", "豊田倉庫"];
 // shortageTable: 依頼数より少なく出庫した際の不足分を書き込む専用テーブル(ルックアップ無し、直接入力のみ)。
 // 「発注表」はパーツマスタへのルックアップを含み、パーツ名の重複によりAPI経由では自動入力できないため新設した。
 // アプリごとにテーブル名・フィールドコードの命名(自動採番の"_0"サフィックス)が異なる点に注意。
-// docType/docField: 出庫登録時に自動生成するPDFの種類と、その添付先フィールド(両アプリにもとから
-// 存在する添付ファイル欄)。過去データを確認したところ、修理王は納品書のみ、ミニットは請求書のみを
-// 使う運用で一貫していたため、依頼元ごとに1種類だけ生成する。
+// docTypes: 出庫登録時に自動生成するPDFの種類と、その添付先フィールド(両アプリにもとから
+// 存在する添付ファイル欄)。修理王は納品書欄しか無いため納品書のみ、ミニットは納品書・請求書の
+// 両方の欄があるため両方を生成する(現物に添付する納品書と、請求処理用の請求書は用途が別のため)。
 const REQUEST_SOURCES = [
   {
     key: "IRAI",
     label: "スーツケース修理王",
     shippingPrepField: "発送準備_0",
     shortageTable: "不足分明細",
-    docType: "delivery",
-    docField: "納品書",
+    docTypes: [{ type: "delivery", field: "納品書", label: "納品書" }],
   },
   {
     key: "IRAI_MINUTE",
     label: "ミニット",
     shippingPrepField: "発送準備",
     shortageTable: "不足分_分納分明細",
-    docType: "invoice",
-    docField: "請求書",
+    docTypes: [
+      { type: "delivery", field: "納品書", label: "納品書" },
+      { type: "invoice", field: "請求書", label: "請求書" },
+    ],
   },
 ];
 
@@ -597,17 +598,18 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
 
   const docItems = (documentItems || []).filter((item) => Number(item.qty) > 0);
   const docOtherItems = (documentOtherItems || []).filter((item) => Number(item.qty) > 0);
-  let pdfBase64 = null;
-  let pdfFilename = null;
+  const documents = [];
   const record = { 出庫登録日: { value: date } };
   if (docItems.length > 0 || docOtherItems.length > 0) {
-    const buildPdf = sourceConfig.docType === "invoice" ? buildInvoicePdf : buildDeliveryNotePdf;
-    const buffer = await buildPdf({ storeName: requestStoreName, date, items: docItems, otherItems: docOtherItems });
-    const timestamp = new Date().toISOString().replace("T", "_").replace(/:/g, "-").slice(0, 19);
-    pdfFilename = `report_${timestamp}.pdf`;
-    pdfBase64 = buffer.toString("base64");
-    const fileKey = await uploadFileToKintone(source, buffer, pdfFilename);
-    record[sourceConfig.docField] = { value: [{ fileKey }] };
+    for (const { type, field, label } of sourceConfig.docTypes) {
+      const buildPdf = type === "invoice" ? buildInvoicePdf : buildDeliveryNotePdf;
+      const buffer = await buildPdf({ storeName: requestStoreName, date, items: docItems, otherItems: docOtherItems });
+      const timestamp = new Date().toISOString().replace("T", "_").replace(/:/g, "-").slice(0, 19);
+      const filename = `report_${timestamp}.pdf`;
+      const fileKey = await uploadFileToKintone(source, buffer, filename);
+      record[field] = { value: [{ fileKey }] };
+      documents.push({ label, filename, base64: buffer.toString("base64") });
+    }
   }
 
   const headers = { ...requestAuthHeaders(source), "Content-Type": "application/json; charset=utf-8" };
@@ -618,7 +620,7 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
   });
   if (!updateRes.ok) throw new Error(`依頼表の更新エラー: ${updateRes.status} ${await updateRes.text()}`);
 
-  return { shukkoResults, shortageResult, pdfBase64, pdfFilename };
+  return { shukkoResults, shortageResult, documents };
 }
 
 async function fetchPartsImage(fileKey) {

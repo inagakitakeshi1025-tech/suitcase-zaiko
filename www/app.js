@@ -659,13 +659,13 @@ async function fulfillRequest(request, detailEl) {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "登録に失敗しました");
-    const docLabel = request.source === "IRAI_MINUTE" ? "請求書" : "納品書";
     resultEl.textContent = shortages.length > 0
       ? "出庫登録が完了しました(不足分は新しい依頼として作成しました)"
       : "出庫登録が完了しました";
     resultEl.className = "result ok";
-    if (json.pdfBase64) {
-      const byteChars = atob(json.pdfBase64);
+    let lastInserted = resultEl;
+    (json.documents || []).forEach((doc) => {
+      const byteChars = atob(doc.base64);
       const bytes = new Uint8Array(byteChars.length);
       for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
       const blob = new Blob([bytes], { type: "application/pdf" });
@@ -674,17 +674,18 @@ async function fulfillRequest(request, detailEl) {
       actions.className = "pdf-actions";
       const openBtn = document.createElement("button");
       openBtn.type = "button";
-      openBtn.textContent = `${docLabel}を開く(印刷・保存)`;
+      openBtn.textContent = `${doc.label}を開く(印刷・保存)`;
       openBtn.addEventListener("click", () => window.open(blobUrl, "_blank"));
       const downloadLink = document.createElement("a");
       downloadLink.href = blobUrl;
-      downloadLink.download = json.pdfFilename || `${docLabel}.pdf`;
-      downloadLink.textContent = `${docLabel}をPCにダウンロード`;
+      downloadLink.download = doc.filename || `${doc.label}.pdf`;
+      downloadLink.textContent = `${doc.label}をPCにダウンロード`;
       downloadLink.className = "pdf-download-link";
       actions.appendChild(openBtn);
       actions.appendChild(downloadLink);
-      resultEl.after(actions);
-    }
+      lastInserted.after(actions);
+      lastInserted = actions;
+    });
     fulfillBtn.textContent = "登録済み";
     loadInventory();
     // 依頼一覧をすぐ自動更新すると、このカード(PDFボタン含む)ごと消えてしまうため、
