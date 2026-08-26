@@ -638,6 +638,8 @@ async function fulfillRequest(request, detailEl) {
     return;
   }
 
+  const fulfillBtn = detailEl.querySelector(".request-fulfill-btn");
+  fulfillBtn.disabled = true;
   resultEl.textContent = "登録中...";
   resultEl.className = "result";
   try {
@@ -683,9 +685,12 @@ async function fulfillRequest(request, detailEl) {
       actions.appendChild(downloadLink);
       resultEl.after(actions);
     }
+    fulfillBtn.textContent = "登録済み";
     loadInventory();
-    setTimeout(loadRequests, 1000);
+    // 依頼一覧をすぐ自動更新すると、このカード(PDFボタン含む)ごと消えてしまうため、
+    // ここでは更新しない。次に「再読み込み」を押した時に一覧から外れる。
   } catch (e) {
+    fulfillBtn.disabled = false;
     resultEl.textContent = "エラー: " + e.message;
     resultEl.className = "result error";
   }
