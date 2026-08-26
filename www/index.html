@@ -41,7 +41,11 @@
 
   <section id="requests-col" class="requests-col" style="display:none;">
     <div class="toolbar">
-      <p class="hint">発送準備が「準備中」かつ、まだ在庫アプリで出庫登録していない依頼だけを表示しています。</p>
+      <select id="requests-status-select">
+        <option value="pending">準備中(未処理)</option>
+        <option value="completed">発送済み(処理済み・見直し用)</option>
+      </select>
+      <p class="hint" id="requests-hint">発送準備が「準備中」かつ、まだ在庫アプリで出庫登録していない依頼だけを表示しています。</p>
       <button id="requests-reload-btn">再読み込み</button>
       <span id="requests-status" class="status"></span>
     </div>

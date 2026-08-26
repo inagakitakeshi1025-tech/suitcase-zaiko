@@ -145,10 +145,24 @@ app.get("/api/stores", (req, res) => {
 
 app.get("/api/requests", async (req, res) => {
   try {
-    res.json(await kintone.getPendingRequests());
+    const status = req.query.status === "completed" ? "completed" : "pending";
+    res.json(await kintone.getRequests(status));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/requests/file", async (req, res) => {
+  try {
+    const { source, fileKey } = req.query;
+    if (!source || !fileKey) return res.status(400).json({ error: "source, fileKey is required" });
+    const { buffer, contentType } = await kintone.fetchRequestDocument(source, fileKey);
+    res.set("Content-Type", contentType);
+    res.send(buffer);
+  } catch (e) {
+    console.error(e);
+    res.status(404).end();
   }
 });
 

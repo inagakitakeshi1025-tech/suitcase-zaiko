@@ -393,9 +393,12 @@ async function addNyukoFromWeb(data) {
   });
 }
 
-// 出庫登録がまだの依頼(提携店からのパーツ購入依頼)を、依頼元アプリ横断で一覧取得する。
-// 「出庫登録日」が空のレコード=まだ在庫アプリから出庫登録していない依頼、という運用。
-async function getPendingRequests() {
+// 提携店からのパーツ購入依頼を、依頼元アプリ横断で一覧取得する。
+// status="pending"(既定): まだ在庫アプリから出庫登録していない依頼(「出庫登録日」が空、かつ発送準備が準備中)。
+// status="completed": この機能で出庫登録済みの依頼(「出庫登録日」が入っている)。間違いが無かったか
+// 見直せるよう、新しい順で返す。この機能を作る前にK-Reportで手動処理した過去分は「出庫登録日」が
+// 無いため、どちらにも出てこない(該当データが無いだけで正常な挙動)。
+async function getRequests(status = "pending") {
   // 依頼表側の「バーコード番号」欄は未入力のことが多いため、パーツ番号からPARTSマスタを逆引きして補完する。
   const partsRecords = await getAllRecords("PARTS");
   const barcodeByPartNo = {};
@@ -412,10 +415,10 @@ async function getPendingRequests() {
   }
 
   const results = [];
-  for (const { key, label, shippingPrepField, shortageTable } of REQUEST_SOURCES) {
-    // 「出庫登録日が空」だけだと、この機能を作る前の完了済み依頼(発送済み)まで全て該当してしまうため、
-    // 「発送準備が準備中」も条件に加えて絞り込む。日付フィールドの空チェックは is empty ではなく = "" を使う。
-    const query = `出庫登録日 = "" and ${shippingPrepField} in ("準備中")`;
+  for (const { key, label, shippingPrepField, shortageTable, docTypes } of REQUEST_SOURCES) {
+    // 日付フィールドの空/非空チェックは is empty / is not empty ではなく = "" / != "" を使う(kintoneの仕様)。
+    const query =
+      status === "completed" ? `出庫登録日 != ""` : `出庫登録日 = "" and ${shippingPrepField} in ("準備中")`;
     const records = await getAllRecords(key, query);
     for (const r of records) {
       const fromOrderTable = (r["発注表"]?.value || [])
@@ -470,11 +473,32 @@ async function getPendingRequests() {
         storeName: r["店舗名"]?.value || "",
         items,
         otherItems,
+        shukkoDate: r["出庫登録日"]?.value || "",
+        // 発送済み表示で、実際に添付された納品書/請求書PDFをその場で見返せるようにする。
+        documents: (docTypes || []).map(({ field, label: docLabel }) => ({
+          label: docLabel,
+          files: (r[field]?.value || []).map((f) => ({ name: f.name, fileKey: f.fileKey })),
+        })),
       });
     }
   }
-  results.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  results.sort((a, b) => {
+    const key1 = status === "completed" ? a.shukkoDate : a.date;
+    const key2 = status === "completed" ? b.shukkoDate : b.date;
+    return (key2 || "").localeCompare(key1 || "");
+  });
   return results;
+}
+
+// 依頼表アプリの添付ファイル(納品書/請求書)を、fileKey指定でダウンロードする。
+async function fetchRequestDocument(source, fileKey) {
+  if (!REQUEST_SOURCES.some((s) => s.key === source)) throw new Error(`不正な依頼元です: ${source}`);
+  const url = `${KINTONE_BASE_URL}/k/v1/file.json?fileKey=${fileKey}`;
+  const res = await fetch(url, { headers: authHeaders(source) });
+  if (!res.ok) throw new Error(`kintoneファイル取得エラー: ${res.status}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const contentType = res.headers.get("content-type") || "application/pdf";
+  return { buffer, contentType };
 }
 
 // 新規レコード作成時にそのままコピーしてよいフィールド型(逆に、レコード番号や集計項目・添付ファイルなど
@@ -642,6 +666,7 @@ module.exports = {
   addShukkoFromWeb,
   addNyukoFromWeb,
   fetchPartsImage,
-  getPendingRequests,
+  getRequests,
+  fetchRequestDocument,
   fulfillRequest,
 };

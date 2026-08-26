@@ -459,28 +459,40 @@ function switchTab(tab) {
 document.getElementById("tab-inventory-btn").addEventListener("click", () => switchTab("inventory"));
 document.getElementById("tab-requests-btn").addEventListener("click", () => switchTab("requests"));
 
+function currentRequestsStatus() {
+  return document.getElementById("requests-status-select").value;
+}
+
 async function loadRequests() {
-  const status = document.getElementById("requests-status");
-  status.textContent = "読み込み中...";
+  const status = currentRequestsStatus();
+  const statusEl = document.getElementById("requests-status");
+  document.getElementById("requests-hint").textContent =
+    status === "completed"
+      ? "この画面から出庫登録が完了した依頼を、新しい順に表示しています(間違いが無かったかの見直し用)。"
+      : "発送準備が「準備中」かつ、まだ在庫アプリで出庫登録していない依頼だけを表示しています。";
+  statusEl.textContent = "読み込み中...";
   try {
-    const res = await fetch("/api/requests");
+    const res = await fetch("/api/requests?status=" + encodeURIComponent(status));
     if (!res.ok) throw new Error((await res.json()).error || "取得に失敗しました");
     requestsCache = await res.json();
     requestsLoaded = true;
-    renderRequests();
-    status.textContent = `${requestsCache.length}件`;
-    const badge = document.getElementById("requests-badge");
-    if (requestsCache.length > 0) {
-      badge.textContent = requestsCache.length;
-      badge.style.display = "";
-    } else {
-      badge.style.display = "none";
+    renderRequests(status);
+    statusEl.textContent = `${requestsCache.length}件`;
+    if (status === "pending") {
+      const badge = document.getElementById("requests-badge");
+      if (requestsCache.length > 0) {
+        badge.textContent = requestsCache.length;
+        badge.style.display = "";
+      } else {
+        badge.style.display = "none";
+      }
     }
   } catch (e) {
-    status.textContent = "読み込みに失敗しました: " + e.message;
+    statusEl.textContent = "読み込みに失敗しました: " + e.message;
   }
 }
 document.getElementById("requests-reload-btn").addEventListener("click", loadRequests);
+document.getElementById("requests-status-select").addEventListener("change", loadRequests);
 
 // バーコードから在庫アプリ側の在庫数(店舗別)を引く。見つからなければ0扱い。
 function lookupStock(barcode, store) {
@@ -501,12 +513,15 @@ function suggestShipment(barcode, qty) {
   return { store: STORES[0], qty: 0 };
 }
 
-function renderRequests() {
+function renderRequests(status) {
   const container = document.getElementById("requests-list");
   container.innerHTML = "";
 
   if (requestsCache.length === 0) {
-    container.innerHTML = `<p class="hint">現在、対応待ちの依頼はありません。</p>`;
+    container.innerHTML =
+      status === "completed"
+        ? `<p class="hint">この在庫アプリから出庫登録した依頼はまだありません。</p>`
+        : `<p class="hint">現在、対応待ちの依頼はありません。</p>`;
     return;
   }
 
@@ -519,6 +534,7 @@ function renderRequests() {
         <span class="tag tag-category">${request.sourceLabel}</span>
         <span class="request-date">${request.date}</span>
         <span class="request-store-name">${request.storeName ?? ""}</span>
+        ${status === "completed" ? `<span class="request-store-name">出庫登録日: ${request.shukkoDate ?? ""}</span>` : ""}
         <span class="request-count">明細${totalCount}件</span>
         <button type="button" class="request-toggle-btn">詳細を開く</button>
       </div>
@@ -530,9 +546,50 @@ function renderRequests() {
       const opening = detailEl.style.display === "none";
       detailEl.style.display = opening ? "" : "none";
       toggleBtn.textContent = opening ? "詳細を閉じる" : "詳細を開く";
-      if (opening && detailEl.innerHTML === "") renderRequestDetail(request, reqIdx, detailEl);
+      if (opening && detailEl.innerHTML === "") {
+        if (status === "completed") renderCompletedRequestDetail(request, detailEl);
+        else renderRequestDetail(request, reqIdx, detailEl);
+      }
     });
     container.appendChild(card);
+  });
+}
+
+// 発送済み(処理済み)の依頼は編集不要なので、明細と実際に添付された納品書/請求書PDFを見返せる
+// だけの読み取り専用表示にする。依頼数=実際に依頼された数であり、不足があった分は別の新しい
+// 依頼レコードに分かれている点に注意。
+function renderCompletedRequestDetail(request, detailEl) {
+  const itemRows = request.items
+    .map((item) => `<tr><td>${item.partNo}</td><td>${item.partName}</td><td>${item.qty}</td><td>${item.unit ?? ""}</td></tr>`)
+    .join("");
+  const otherRows = request.otherItems
+    .map((item) => `<tr><td>-</td><td>${item.partName}${item.color ? `(${item.color})` : ""}</td><td>${item.qty}</td><td>-</td></tr>`)
+    .join("");
+  const docsHtml = request.documents
+    .map((doc) =>
+      doc.files
+        .map(
+          (f) =>
+            `<button type="button" class="pdf-download-link completed-doc-btn" data-source="${request.source}" data-filekey="${f.fileKey}">${doc.label}を開く(${f.name})</button>`
+        )
+        .join("")
+    )
+    .join("");
+  detailEl.innerHTML = `
+    <div class="request-table-wrap">
+      <table class="request-table">
+        <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>依頼数</th><th>単位</th></tr></thead>
+        <tbody>${itemRows}${otherRows}</tbody>
+      </table>
+    </div>
+    <p class="hint">出庫登録日: ${request.shukkoDate ?? ""}(依頼数は元の依頼数です。実際の出庫数・不足分の扱いは添付PDFを確認してください)</p>
+    <div class="pdf-actions">${docsHtml || '<span class="hint">添付されたPDFはありません。</span>'}</div>
+  `;
+  detailEl.querySelectorAll(".completed-doc-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = `/api/requests/file?source=${encodeURIComponent(btn.dataset.source)}&fileKey=${encodeURIComponent(btn.dataset.filekey)}`;
+      window.open(url, "_blank");
+    });
   });
 }
 
