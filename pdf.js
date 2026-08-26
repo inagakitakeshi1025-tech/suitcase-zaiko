@@ -36,6 +36,28 @@ function rule(width) {
   return { canvas: [{ type: "line", x1: 0, y1: 0, x2: width, y2: 0, lineWidth: 1.2, lineColor: "#000000" }] };
 }
 
+function mmToPt(mm) {
+  return mm * 2.83465;
+}
+
+// テキストの直下ではなく、指定した間隔(mm)だけ離した位置に、文字幅ぴったりの下線を引く。
+// pdfmakeの`decoration: "underline"`は文字にくっついた位置にしか線を引けないため、
+// 内容幅(widths:"auto")の1マスだけの表を作り、その下端の罫線だけを表示する形で実現している。
+function underlinedText(text, fontSize, gapMm) {
+  return {
+    table: { widths: ["auto"], body: [[{ text, fontSize }]] },
+    layout: {
+      hLineWidth: (i, node) => (i === node.table.body.length ? 1 : 0),
+      vLineWidth: () => 0,
+      hLineColor: () => "#000000",
+      paddingLeft: () => 0,
+      paddingRight: () => 0,
+      paddingTop: () => 0,
+      paddingBottom: () => mmToPt(gapMm),
+    },
+  };
+}
+
 function boxLayout() {
   return {
     hLineWidth: () => 1,
@@ -169,7 +191,7 @@ function buildDocument({ title, addressLabel, addressValue, date, items, otherIt
           rule(220),
           { text: addressValue, fontSize: 15, margin: [0, 4, 0, 0] },
         ]
-      : [{ text: addressValue, fontSize: 15, decoration: "underline", margin: [0, 0, 0, 4] }],
+      : [underlinedText(addressValue, 15, 3)],
   };
 
   const amountRow = withPaymentBox
