@@ -78,7 +78,7 @@ main {
 }
 
 .form-col {
-  width: 360px;
+  width: 460px;
   flex-shrink: 0;
   position: sticky;
   top: 24px;

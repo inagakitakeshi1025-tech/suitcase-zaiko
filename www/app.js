@@ -832,10 +832,19 @@ function renderHistory(appKey) {
         <span class="request-date">${record.date}</span>
         <span class="request-store-name">${record.store}</span>
         <span class="request-count">明細${record.rows.length}件</span>
+        <button type="button" class="request-toggle-btn history-toggle-btn">詳細を開く</button>
         <button type="button" class="request-delete-btn history-record-delete-btn">この登録をまとめて削除</button>
       </div>
-      <div class="item-list" style="margin-top:10px;">${rows}</div>
+      <div class="item-list" style="margin-top:10px; display:none;">${rows}</div>
     `;
+
+    const historyToggleBtn = card.querySelector(".history-toggle-btn");
+    const historyItemList = card.querySelector(".item-list");
+    historyToggleBtn.addEventListener("click", () => {
+      const opening = historyItemList.style.display === "none";
+      historyItemList.style.display = opening ? "" : "none";
+      historyToggleBtn.textContent = opening ? "詳細を閉じる" : "詳細を開く";
+    });
 
     card.querySelector(".history-record-delete-btn").addEventListener("click", async () => {
       if (!confirm(`${record.date} / ${record.store} の登録(${record.rows.length}件)をまとめて削除しますか？\n元に戻せません。`)) return;
