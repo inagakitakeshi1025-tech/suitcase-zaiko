@@ -1,21 +1,24 @@
 // 提携店への納品書・請求書PDFを生成するモジュール。
-// 見た目は旧K-Reportの様式(サンプルPDF)に準拠しつつ、pdfmake(軽量な純JSライブラリ)で組み直している。
-// ヘッドレスブラウザ等の重い依存を使わないため、Renderの無料枠でも動作コストが増えない。
+// 旧K-Report出力(サンプルPDF)のレイアウトにできるだけ近づけている(二重罫線の見出し、
+// 店舗名/発注年月日の枠、金額ボックス、請求書は振込先ボックスを右側に並べる、明朝体)。
+// pdfmake(軽量な純JSライブラリ)で組んでおり、ヘッドレスブラウザ等の重い依存は使わない。
 
 const path = require("path");
 const pdfmake = require("pdfmake");
 
-const FONT_PATH = path.join(__dirname, "fonts", "NotoSansJP.ttf");
+const FONT_PATH = path.join(__dirname, "fonts", "NotoSerifJP.ttf");
 pdfmake.addFonts({
-  NotoSansJP: { normal: FONT_PATH, bold: FONT_PATH, italics: FONT_PATH, bolditalics: FONT_PATH },
+  NotoSerifJP: { normal: FONT_PATH, bold: FONT_PATH, italics: FONT_PATH, bolditalics: FONT_PATH },
 });
 
 const TAX_RATE = 0.1;
+const PAGE_WIDTH = 515; // A4(pageMargins 40,40)の本文幅にほぼ合わせた基準値
 
 // 請求書に載せる自社情報。サンプルPDF(旧K-Report出力)の内容をそのまま固定値として使う。
 const COMPANY_NAME = "スーツケースの救急車／合同会社Facilitate";
 const COMPANY_REGISTRATION_NUMBER = "T6180003016648";
-const COMPANY_BANK_INFO = "愛知銀行　八事支店　普通　2057354　（ド）ファシリテート";
+const BANK_LINE = "入金先：愛知銀行　八事支店　普通　2057354";
+const BANK_HOLDER = "　　　　　ド）ファシリテート";
 const PAYMENT_TERMS = "月末締め、翌月末日までのお振込みをお願い致します。";
 const MINUTE_CUSTOMER_NAME = "ミニット　アジア　パシフィック（株）　様";
 
@@ -29,57 +32,25 @@ function calcTotals(items, otherItems) {
   return { subtotal, tax, total: subtotal + tax };
 }
 
-function buildMainTable(items, { showCode }) {
-  const headerRow = showCode
-    ? ["NO.", "商品コード", "パーツ名(パーツ番号)", "単価", "購入数", "合計"]
-    : ["NO.", "パーツ番号", "パーツ名", "単価", "購入数", "合計"];
-  const widths = showCode ? ["auto", "auto", "*", "auto", "auto", "auto"] : ["auto", "auto", "*", "auto", "auto", "auto"];
-  const body = [headerRow];
-  items.forEach((item, i) => {
-    const lineTotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
-    if (showCode) {
-      body.push([
-        String(i + 1),
-        item.minuteCode || "",
-        `${item.partName || ""}${item.partNo ? `(${item.partNo})` : ""}`,
-        yen(item.price),
-        String(item.qty),
-        yen(lineTotal),
-      ]);
-    } else {
-      body.push([String(i + 1), item.partNo || "", item.partName || "", yen(item.price), String(item.qty), yen(lineTotal)]);
-    }
-  });
-  return { table: { headerRows: 1, widths, body }, layout: tableLayout(), margin: [0, 0, 0, 10] };
+function rule(width) {
+  return { canvas: [{ type: "line", x1: 0, y1: 0, x2: width, y2: 0, lineWidth: 1.2, lineColor: "#000000" }] };
 }
 
-function buildOtherTable(otherItems, startNo) {
-  const body = [["NO.", "パーツ名(特注品)", "単価", "購入数", "合計"]];
-  otherItems.forEach((item, i) => {
-    const lineTotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
-    body.push([
-      String(startNo + i),
-      `${item.partName || ""}${item.color ? `(${item.color})` : ""}`,
-      yen(item.price),
-      String(item.qty),
-      yen(lineTotal),
-    ]);
-  });
+function boxLayout() {
   return {
-    stack: [
-      { text: "型番なし部材", margin: [0, 10, 0, 4] },
-      { table: { headerRows: 1, widths: ["auto", "*", "auto", "auto", "auto"], body }, layout: tableLayout() },
-    ],
+    hLineWidth: () => 1,
+    vLineWidth: () => 1,
+    hLineColor: () => "#000000",
+    vLineColor: () => "#000000",
   };
 }
 
 function tableLayout() {
   return {
-    hLineWidth: () => 0.5,
-    vLineWidth: () => 0.5,
-    hLineColor: () => "#999999",
-    vLineColor: () => "#999999",
-    fillColor: (rowIndex) => (rowIndex === 0 ? "#eeeeee" : null),
+    hLineWidth: () => 0.75,
+    vLineWidth: () => 0.75,
+    hLineColor: () => "#000000",
+    vLineColor: () => "#000000",
     paddingLeft: () => 4,
     paddingRight: () => 4,
     paddingTop: () => 3,
@@ -87,41 +58,139 @@ function tableLayout() {
   };
 }
 
-function buildDocument({ title, addressLines, date, items, otherItems, showCode, footerBox, taxLine }) {
+function buildMainTable(items, { showCode }) {
+  const headerRow = showCode
+    ? [{ text: "NO.", alignment: "center" }, { text: "商品コード", alignment: "center" }, { text: "パーツ名/パーツ番号", alignment: "center" }, { text: "単価", alignment: "center" }, { text: "購入数", alignment: "center" }, { text: "合計", alignment: "center" }]
+    : [{ text: "NO.", alignment: "center" }, { text: "パーツ番号/名称", colSpan: 2, alignment: "center" }, {}, { text: "単価", alignment: "center" }, { text: "購入数", alignment: "center" }, { text: "合計", alignment: "center" }];
+  const widths = showCode ? [24, 55, "*", 50, 40, 60] : [24, 55, "*", 50, 40, 60];
+  const body = [headerRow];
+  items.forEach((item, i) => {
+    const lineTotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
+    if (showCode) {
+      body.push([
+        { text: String(i + 1), alignment: "center" },
+        item.minuteCode || "",
+        `${item.partName || ""}${item.partNo ? `(${item.partNo})` : ""}`,
+        { text: yen(item.price), alignment: "right" },
+        { text: String(item.qty), alignment: "right" },
+        { text: yen(lineTotal), alignment: "right" },
+      ]);
+    } else {
+      body.push([
+        { text: String(i + 1), alignment: "center" },
+        item.partNo || "",
+        item.partName || "",
+        { text: yen(item.price), alignment: "right" },
+        { text: String(item.qty), alignment: "right" },
+        { text: yen(lineTotal), alignment: "right" },
+      ]);
+    }
+  });
+  return { table: { headerRows: 1, widths, body }, layout: tableLayout(), margin: [0, 0, 0, 10] };
+}
+
+function buildOtherTable(otherItems, startNo) {
+  const body = [[{ text: "NO.", alignment: "center" }, { text: "パーツ名(特注品)", alignment: "center" }, { text: "単価", alignment: "center" }, { text: "購入数", alignment: "center" }, { text: "合計", alignment: "center" }]];
+  otherItems.forEach((item, i) => {
+    const lineTotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
+    body.push([
+      { text: String(startNo + i), alignment: "center" },
+      `${item.partName || ""}${item.color ? `(${item.color})` : ""}`,
+      { text: yen(item.price), alignment: "right" },
+      { text: String(item.qty), alignment: "right" },
+      { text: yen(lineTotal), alignment: "right" },
+    ]);
+  });
+  return {
+    stack: [
+      { text: "型番なし部材", margin: [0, 10, 0, 4] },
+      { table: { headerRows: 1, widths: [24, "*", 50, 40, 60], body }, layout: tableLayout() },
+    ],
+  };
+}
+
+function amountBox(total, subtotal) {
+  return {
+    table: {
+      widths: [70, 150],
+      body: [[
+        { text: "金額", bold: true, alignment: "center", margin: [0, 6, 0, 6] },
+        { text: `${yen(total)}(税別：${subtotal.toLocaleString("ja-JP")})`, alignment: "center", margin: [0, 6, 0, 6] },
+      ]],
+    },
+    layout: boxLayout(),
+  };
+}
+
+function paymentInfoBox() {
+  return {
+    table: {
+      widths: ["*"],
+      body: [[
+        {
+          stack: [
+            { text: PAYMENT_TERMS, fontSize: 9 },
+            { text: BANK_LINE, fontSize: 9, margin: [0, 4, 0, 0] },
+            { text: BANK_HOLDER, fontSize: 9 },
+            { text: COMPANY_NAME, fontSize: 9, margin: [0, 6, 0, 0] },
+            { text: `登録番号：${COMPANY_REGISTRATION_NUMBER}`, fontSize: 9 },
+          ],
+          margin: [6, 6, 6, 6],
+        },
+      ]],
+    },
+    layout: boxLayout(),
+  };
+}
+
+function buildDocument({ title, addressLabel, addressValue, date, items, otherItems, showCode, withPaymentBox, taxLine }) {
   const { subtotal, tax, total } = calcTotals(items, otherItems);
-  const content = [
-    { text: title, fontSize: 22, alignment: "center", margin: [0, 0, 0, 20] },
-    {
-      columns: [
-        { width: "*", text: addressLines, fontSize: 11 },
-        { width: "auto", text: [{ text: "発注年月日\n", fontSize: 9, color: "#666666" }, { text: date || "", fontSize: 12 }], alignment: "right" },
+
+  const dateBox = {
+    width: 160,
+    table: {
+      widths: ["*"],
+      body: [
+        [{ text: "発注年月日", alignment: "center", fontSize: 9, margin: [0, 3, 0, 2] }],
+        [{ text: date || "", alignment: "center", fontSize: 13, margin: [0, 2, 0, 4] }],
       ],
-      margin: [0, 0, 0, 12],
     },
-    { text: "以下の通り、納品いたします。", margin: [0, 0, 0, 10] },
-    {
-      table: { widths: ["auto"], body: [[{ text: `金額　${yen(total)}(税別：${subtotal.toLocaleString("ja-JP")})`, bold: false, margin: [4, 4, 4, 4] }]] },
-      layout: tableLayout(),
-      margin: [0, 0, 0, taxLine ? 4 : 14],
-    },
+    layout: boxLayout(),
+  };
+
+  const addressBlock = {
+    width: "*",
+    stack: [
+      { text: addressLabel, fontSize: 9, margin: [0, 0, 0, 3] },
+      rule(220),
+      { text: addressValue, fontSize: 15, margin: [0, 4, 0, 0] },
+    ],
+  };
+
+  const amountRow = withPaymentBox
+    ? {
+        columns: [
+          { width: 230, stack: [amountBox(total, subtotal), { text: `(税：${tax.toLocaleString("ja-JP")})`, fontSize: 9, margin: [0, 4, 0, 0] }] },
+          { width: "*", ...paymentInfoBox() },
+        ],
+        columnGap: 12,
+        margin: [0, 0, 0, 16],
+      }
+    : { columns: [amountBox(total, subtotal)], margin: [0, 0, 0, 16] };
+
+  const content = [
+    rule(PAGE_WIDTH),
+    { text: title, fontSize: 26, alignment: "center", margin: [0, 10, 0, 10] },
+    rule(PAGE_WIDTH),
+    { columns: [addressBlock, dateBox], columnGap: 10, margin: [0, 16, 0, 14] },
+    { text: "以下の通り、納品いたします。", margin: [0, 0, 0, 12] },
+    amountRow,
   ];
-  if (taxLine) content.push({ text: `(税：${tax.toLocaleString("ja-JP")})`, fontSize: 9, margin: [0, 0, 0, 14] });
   if (items.length > 0) content.push(buildMainTable(items, { showCode }));
   if (otherItems.length > 0) content.push(buildOtherTable(otherItems, items.length + 1));
-  if (footerBox) {
-    content.push({
-      margin: [0, 20, 0, 0],
-      stack: [
-        { text: PAYMENT_TERMS, fontSize: 9 },
-        { text: `入金先：${COMPANY_BANK_INFO}`, fontSize: 9, margin: [0, 4, 0, 0] },
-        { text: COMPANY_NAME, fontSize: 9, margin: [0, 8, 0, 0] },
-        { text: `登録番号：${COMPANY_REGISTRATION_NUMBER}`, fontSize: 9 },
-      ],
-    });
-  }
 
   const docDefinition = {
-    defaultStyle: { font: "NotoSansJP", fontSize: 10 },
+    defaultStyle: { font: "NotoSerifJP", fontSize: 10 },
     pageMargins: [40, 40, 40, 40],
     content,
     footer: (currentPage, pageCount) => ({
@@ -139,26 +208,28 @@ function buildDocument({ title, addressLines, date, items, otherItems, showCode,
 async function buildDeliveryNotePdf({ storeName, date, items, otherItems }) {
   return buildDocument({
     title: "納品書",
-    addressLines: [{ text: "店舗名\n", fontSize: 9, color: "#666666" }, { text: storeName || "", fontSize: 13 }],
+    addressLabel: "店舗名",
+    addressValue: storeName || "",
     date,
     items,
     otherItems,
     showCode: false,
-    footerBox: false,
+    withPaymentBox: false,
     taxLine: false,
   });
 }
 
-// ミニット向け。宛先は固定の取引先名。振込先等の請求情報を併記する。
+// ミニット向け。宛先は固定の取引先名。振込先等の請求情報を右側に併記する。
 async function buildInvoicePdf({ date, items, otherItems }) {
   return buildDocument({
     title: "請求書",
-    addressLines: [{ text: MINUTE_CUSTOMER_NAME, fontSize: 13 }],
+    addressLabel: "",
+    addressValue: MINUTE_CUSTOMER_NAME,
     date,
     items,
     otherItems,
     showCode: true,
-    footerBox: true,
+    withPaymentBox: true,
     taxLine: true,
   });
 }
