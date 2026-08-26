@@ -449,15 +449,18 @@ let requestsCache = [];
 let requestsLoaded = false;
 
 function switchTab(tab) {
-  const isRequests = tab === "requests";
-  document.getElementById("list-col").style.display = isRequests ? "none" : "";
-  document.getElementById("requests-col").style.display = isRequests ? "" : "none";
-  document.getElementById("tab-inventory-btn").classList.toggle("is-active", !isRequests);
-  document.getElementById("tab-requests-btn").classList.toggle("is-active", isRequests);
-  if (isRequests && !requestsLoaded) loadRequests();
+  document.getElementById("list-col").style.display = tab === "inventory" ? "" : "none";
+  document.getElementById("requests-col").style.display = tab === "requests" ? "" : "none";
+  document.getElementById("history-col").style.display = tab === "history" ? "" : "none";
+  document.getElementById("tab-inventory-btn").classList.toggle("is-active", tab === "inventory");
+  document.getElementById("tab-requests-btn").classList.toggle("is-active", tab === "requests");
+  document.getElementById("tab-history-btn").classList.toggle("is-active", tab === "history");
+  if (tab === "requests" && !requestsLoaded) loadRequests();
+  if (tab === "history" && !historyLoaded) loadHistory();
 }
 document.getElementById("tab-inventory-btn").addEventListener("click", () => switchTab("inventory"));
 document.getElementById("tab-requests-btn").addEventListener("click", () => switchTab("requests"));
+document.getElementById("tab-history-btn").addEventListener("click", () => switchTab("history"));
 
 function currentRequestsStatus() {
   return document.getElementById("requests-status-select").value;
@@ -537,6 +540,7 @@ function renderRequests(status) {
         ${status === "completed" ? `<span class="request-store-name">出庫登録日: ${request.shukkoDate ?? ""}</span>` : ""}
         <span class="request-count">明細${totalCount}件</span>
         <button type="button" class="request-toggle-btn">詳細を開く</button>
+        ${status === "pending" ? `<button type="button" class="request-delete-btn">削除</button>` : ""}
       </div>
       <div class="request-detail" style="display:none;"></div>
     `;
@@ -551,6 +555,26 @@ function renderRequests(status) {
         else renderRequestDetail(request, reqIdx, detailEl);
       }
     });
+    const deleteBtn = card.querySelector(".request-delete-btn");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", async () => {
+        if (!confirm(`この依頼(${request.sourceLabel} / ${request.date} / ${request.storeName ?? ""})を削除しますか？\n元に戻せません。`)) return;
+        deleteBtn.disabled = true;
+        try {
+          const res = await fetch("/api/requests/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source: request.source, recordId: request.recordId }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "削除に失敗しました");
+          loadRequests();
+        } catch (e) {
+          alert("エラー: " + e.message);
+          deleteBtn.disabled = false;
+        }
+      });
+    }
     container.appendChild(card);
   });
 }
@@ -752,6 +776,112 @@ async function fulfillRequest(request, detailEl) {
     resultEl.textContent = "エラー: " + e.message;
     resultEl.className = "result error";
   }
+}
+
+// ===== 出庫表・入庫表の登録履歴(見直し・削除用) =====
+let historyCache = [];
+let historyLoaded = false;
+
+async function loadHistory() {
+  const appKey = document.getElementById("history-app-select").value;
+  const statusEl = document.getElementById("history-status");
+  statusEl.textContent = "読み込み中...";
+  try {
+    const res = await fetch("/api/history?appKey=" + encodeURIComponent(appKey));
+    if (!res.ok) throw new Error((await res.json()).error || "取得に失敗しました");
+    historyCache = await res.json();
+    historyLoaded = true;
+    renderHistory(appKey);
+    statusEl.textContent = `${historyCache.length}件`;
+  } catch (e) {
+    statusEl.textContent = "読み込みに失敗しました: " + e.message;
+  }
+}
+document.getElementById("history-reload-btn").addEventListener("click", loadHistory);
+document.getElementById("history-app-select").addEventListener("change", loadHistory);
+
+function renderHistory(appKey) {
+  const container = document.getElementById("history-list");
+  container.innerHTML = "";
+
+  if (historyCache.length === 0) {
+    container.innerHTML = `<p class="hint">直近30日分の登録はありません。</p>`;
+    return;
+  }
+
+  historyCache.forEach((record) => {
+    const card = document.createElement("div");
+    card.className = "request-card";
+    const rows = record.rows
+      .map(
+        (row) => `
+      <tr data-row-index="${row.rowIndex}">
+        <td>${row.partNo}</td>
+        <td>${row.partName}</td>
+        <td>${row.qty}</td>
+        <td>${row.unit ?? ""}</td>
+        <td><button type="button" class="request-delete-btn history-row-delete-btn">削除</button></td>
+      </tr>`
+      )
+      .join("");
+    card.innerHTML = `
+      <div class="request-card-header">
+        <span class="request-date">${record.date}</span>
+        <span class="request-store-name">${record.store}</span>
+        <span class="request-count">明細${record.rows.length}件</span>
+        <button type="button" class="request-delete-btn history-record-delete-btn">この登録をまとめて削除</button>
+      </div>
+      <div class="request-table-wrap" style="margin-top:10px;">
+        <table class="request-table">
+          <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>数量</th><th>単位</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+
+    card.querySelector(".history-record-delete-btn").addEventListener("click", async () => {
+      if (!confirm(`${record.date} / ${record.store} の登録(${record.rows.length}件)をまとめて削除しますか？\n元に戻せません。`)) return;
+      try {
+        const res = await fetch("/api/history/delete-record", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ appKey, recordId: record.recordId }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "削除に失敗しました");
+        loadHistory();
+        loadInventory();
+      } catch (e) {
+        alert("エラー: " + e.message);
+      }
+    });
+
+    card.querySelectorAll(".history-row-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = btn.closest("tr");
+        const rowIndex = Number(row.dataset.rowIndex);
+        const partName = row.children[1].textContent;
+        if (!confirm(`この明細(${partName})を削除しますか？\n元に戻せません。`)) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch("/api/history/delete-row", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ appKey, recordId: record.recordId, rowIndex }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "削除に失敗しました");
+          loadHistory();
+          loadInventory();
+        } catch (e) {
+          alert("エラー: " + e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+
+    container.appendChild(card);
+  });
 }
 
 loadInventory();

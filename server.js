@@ -176,6 +176,49 @@ app.post("/api/requests/fulfill", async (req, res) => {
   }
 });
 
+app.post("/api/requests/delete", async (req, res) => {
+  try {
+    const { source, recordId } = req.body;
+    const result = await kintone.deleteRequest(source, recordId);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/history", async (req, res) => {
+  try {
+    const appKey = req.query.appKey === "NYUKO" ? "NYUKO" : "SHUKKO";
+    res.json(await kintone.getRegistrationHistory(appKey));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/history/delete-record", async (req, res) => {
+  try {
+    const { appKey, recordId } = req.body;
+    const result = await kintone.deleteRegistrationRecord(appKey, recordId);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/history/delete-row", async (req, res) => {
+  try {
+    const { appKey, recordId, rowIndex } = req.body;
+    const result = await kintone.deleteRegistrationRow(appKey, recordId, rowIndex);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // パーツ画像はkintoneから毎回取得すると遅いため、初回取得後はディスクにキャッシュして使い回す。
 app.get("/api/image", async (req, res) => {
   try {

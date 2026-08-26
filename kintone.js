@@ -393,6 +393,87 @@ async function addNyukoFromWeb(data) {
   });
 }
 
+// 出庫表・入庫表は「その日・その店舗」でまとめて1レコードにテーブル(明細行)を持つ構造が共通なので、
+// 誤登録の見直し・削除機能もこの2アプリで共通の設定として扱う。
+const HISTORY_CONFIG = {
+  SHUKKO: {
+    label: "出庫表",
+    dateField: "出庫日",
+    storeField: "出庫元",
+    rowFields: { barcode: "バーコード番号", partNo: "パーツ番号", partName: "パーツ名", unit: "単位・袋分け用", qty: "出庫数" },
+  },
+  NYUKO: {
+    label: "入庫表",
+    dateField: "入荷日",
+    storeField: "入庫先",
+    rowFields: { barcode: "バーコード番号_1", partNo: "パーツ番号", partName: "パーツ名", unit: "単位・袋分け用", qty: "袋数" },
+  },
+};
+
+// 直近days日分の出庫/入庫登録を、明細行(削除対象を指すrowIndex付き)ごと新しい順で返す。
+async function getRegistrationHistory(appKey, days = 30) {
+  const cfg = HISTORY_CONFIG[appKey];
+  if (!cfg) throw new Error(`不正なアプリです: ${appKey}`);
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().slice(0, 10);
+  const records = await getAllRecords(appKey, `${cfg.dateField} >= "${sinceStr}"`);
+  const results = records.map((r) => ({
+    appKey,
+    recordId: r["レコード番号"]?.value,
+    date: r[cfg.dateField]?.value || "",
+    store: r[cfg.storeField]?.value || "",
+    rows: (r["テーブル"]?.value || []).map((row, rowIndex) => ({
+      rowIndex,
+      barcode: row.value[cfg.rowFields.barcode]?.value || "",
+      partNo: row.value[cfg.rowFields.partNo]?.value || "",
+      partName: row.value[cfg.rowFields.partName]?.value || "",
+      unit: row.value[cfg.rowFields.unit]?.value || "",
+      qty: row.value[cfg.rowFields.qty]?.value || "",
+    })),
+  }));
+  results.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  return results;
+}
+
+// その日・その店舗の登録をまとめて1件削除する。
+// SHUKKO/NYUKOのAPIトークンには削除権限を付与していないため、依頼表と同様にサービスアカウントの
+// パスワード認証を併用する(requestAuthHeadersは名前の通り依頼表用に作った関数だが、中身は
+// 「APIトークン+サービスアカウント」の組み合わせを返すだけの汎用処理なのでそのまま使う)。
+async function deleteRegistrationRecord(appKey, recordId) {
+  if (!HISTORY_CONFIG[appKey]) throw new Error(`不正なアプリです: ${appKey}`);
+  const res = await fetch(`${KINTONE_BASE_URL}/k/v1/records.json?app=${APP_ID[appKey]}&ids%5B%5D=${recordId}`, {
+    method: "DELETE",
+    headers: requestAuthHeaders(appKey),
+  });
+  if (!res.ok) throw new Error(`削除エラー: ${res.status} ${await res.text()}`);
+  return { deleted: "record" };
+}
+
+// 登録済み明細を1行だけ削除する。削除した結果テーブルが空になる場合はレコードごと削除する。
+// テーブルのバーコード番号はPARTSアプリへのルックアップのため、書き戻し(PUT)にはSHUKKO/NYUKO単体の
+// トークンだけでなくPARTS・STOREのトークンも組み合わせて渡す必要がある(addOrAppendRecordと同じ理由)。
+async function deleteRegistrationRow(appKey, recordId, rowIndex) {
+  if (!HISTORY_CONFIG[appKey]) throw new Error(`不正なアプリです: ${appKey}`);
+  const appId = APP_ID[appKey];
+  const res = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json?app=${appId}&id=${recordId}`, { headers: authHeaders(appKey) });
+  if (!res.ok) throw new Error(`レコード取得エラー: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  const rows = json.record["テーブル"].value;
+  if (rowIndex < 0 || rowIndex >= rows.length) throw new Error("指定された明細が見つかりません(画面を再読み込みしてください)");
+  const updatedRows = rows.filter((_, i) => i !== rowIndex);
+  if (updatedRows.length === 0) return deleteRegistrationRecord(appKey, recordId);
+
+  const headers = { ...combinedAuthHeaders([appKey, "PARTS", "STORE"]), "Content-Type": "application/json; charset=utf-8" };
+  const updateRes = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ app: Number(appId), id: Number(recordId), record: { テーブル: { value: updatedRows } } }),
+  });
+  if (!updateRes.ok) throw new Error(`明細の削除エラー: ${updateRes.status} ${await updateRes.text()}`);
+  return { deleted: "row" };
+}
+
 // 提携店からのパーツ購入依頼を、依頼元アプリ横断で一覧取得する。
 // status="pending"(既定): まだ在庫アプリから出庫登録していない依頼(「出庫登録日」が空、かつ発送準備が準備中)。
 // status="completed": この機能で出庫登録済みの依頼(「出庫登録日」が入っている)。間違いが無かったか
@@ -647,6 +728,27 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
   return { shukkoResults, shortageResult, documents };
 }
 
+// 入力ミスの依頼を削除する。出庫表・PDFと連動してしまうと整合性が崩れるため、
+// まだ出庫登録していない(準備中の)依頼のみを対象とする。
+async function deleteRequest(source, recordId) {
+  const sourceConfig = REQUEST_SOURCES.find((s) => s.key === source);
+  if (!sourceConfig) throw new Error(`不正な依頼元です: ${source}`);
+  const res = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json?app=${APP_ID[source]}&id=${recordId}`, {
+    headers: authHeaders(source),
+  });
+  if (!res.ok) throw new Error(`依頼レコード取得エラー: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  if (json.record["出庫登録日"]?.value) {
+    throw new Error("この依頼はすでに出庫登録済みのため、この画面からは削除できません");
+  }
+  const delRes = await fetch(`${KINTONE_BASE_URL}/k/v1/records.json?app=${APP_ID[source]}&ids%5B%5D=${recordId}`, {
+    method: "DELETE",
+    headers: requestAuthHeaders(source),
+  });
+  if (!delRes.ok) throw new Error(`依頼の削除エラー: ${delRes.status} ${await delRes.text()}`);
+  return { deleted: true };
+}
+
 async function fetchPartsImage(fileKey) {
   const url = `${KINTONE_BASE_URL}/k/v1/file.json?fileKey=${fileKey}`;
   const res = await fetch(url, { headers: authHeaders("PARTS") });
@@ -669,4 +771,8 @@ module.exports = {
   getRequests,
   fetchRequestDocument,
   fulfillRequest,
+  deleteRequest,
+  getRegistrationHistory,
+  deleteRegistrationRecord,
+  deleteRegistrationRow,
 };

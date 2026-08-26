@@ -724,6 +724,17 @@ select.store-select,
 
 .request-toggle-btn:hover { background: var(--accent-dark); }
 
+.request-delete-btn {
+  padding: 6px 14px;
+  background: #fff;
+  color: var(--alert-text);
+  border: 1px solid var(--alert-text);
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.request-delete-btn:hover { background: var(--alert-text); color: #fff; }
+
 .request-detail {
   margin-top: 12px;
   padding-top: 12px;
