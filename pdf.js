@@ -158,13 +158,20 @@ function buildDocument({ title, addressLabel, addressValue, date, items, otherIt
     layout: boxLayout(),
   };
 
+  // ラベルがある場合(修理王の「店舗名」)は、ラベル→下線→値の順。ラベルが無い場合
+  // (ミニットの請求書の宛名)は下線を宛名のすぐ下に置くため、値→下線の順にする。
   const addressBlock = {
     width: "*",
-    stack: [
-      { text: addressLabel, fontSize: 9, margin: [0, 0, 0, 3] },
-      rule(220),
-      { text: addressValue, fontSize: 15, margin: [0, 4, 0, 0] },
-    ],
+    stack: addressLabel
+      ? [
+          { text: addressLabel, fontSize: 9, margin: [0, 0, 0, 3] },
+          rule(220),
+          { text: addressValue, fontSize: 15, margin: [0, 4, 0, 0] },
+        ]
+      : [
+          { text: addressValue, fontSize: 15, margin: [0, 0, 0, 4] },
+          rule(220),
+        ],
   };
 
   const amountRow = withPaymentBox
