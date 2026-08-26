@@ -223,7 +223,9 @@ app.post("/api/zaiko-adjust", async (req, res) => {
   }
 });
 
-app.use(express.static(wwwRoot));
+// キャッシュ由来で古いJS/CSSが表示され続けないよう、毎回サーバーに最新かどうか確認させる
+// (更新が無ければ304で高速に返る。完全に無効化するわけではないので表示速度への影響は小さい)。
+app.use(express.static(wwwRoot, { setHeaders: (res) => res.setHeader("Cache-Control", "no-cache") }));
 app.get("*", (req, res) => {
   res.sendFile(path.join(wwwRoot, "index.html"));
 });
