@@ -861,8 +861,17 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
   const record = { 出庫登録日: { value: date } };
   if (docItems.length > 0 || docOtherItems.length > 0) {
     for (const { type, field, label } of sourceConfig.docTypes) {
-      const buildPdf = type === "invoice" ? buildInvoicePdf : buildDeliveryNotePdf;
-      const buffer = await buildPdf({ storeName: requestStoreName, date, items: docItems, otherItems: docOtherItems });
+      // ミニット向け(納品書・請求書とも)は自社名称ではなくミニット商品コード・名称を見せる。
+      const buffer =
+        type === "invoice"
+          ? await buildInvoicePdf({ date, items: docItems, otherItems: docOtherItems })
+          : await buildDeliveryNotePdf({
+              storeName: requestStoreName,
+              date,
+              items: docItems,
+              otherItems: docOtherItems,
+              showCode: source === "IRAI_MINUTE",
+            });
       const timestamp = new Date().toISOString().replace("T", "_").replace(/:/g, "-").slice(0, 19);
       const filename = `report_${timestamp}.pdf`;
       const fileKey = await uploadFileToKintone(source, buffer, filename);

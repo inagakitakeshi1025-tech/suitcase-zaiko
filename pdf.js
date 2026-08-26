@@ -204,8 +204,10 @@ function buildDocument({ title, addressLabel, addressValue, date, items, otherIt
   return pdf.getBuffer();
 }
 
-// 修理王向け。宛先はその依頼の店舗名(フランチャイズ加盟店名)。請求は別管理のため税抜金額のみ表示。
-async function buildDeliveryNotePdf({ storeName, date, items, otherItems }) {
+// 納品書は修理王・ミニット共通で使う。パーツ番号/名称欄に何を出すかは書類種別ではなく
+// 依頼元で決まる(ミニットは自社名称ではなくミニット向け商品コード・名称を見せる必要がある)ため、
+// showCodeを呼び出し側(fulfillRequest)から渡してもらう。
+async function buildDeliveryNotePdf({ storeName, date, items, otherItems, showCode }) {
   return buildDocument({
     title: "納品書",
     addressLabel: "店舗名",
@@ -213,7 +215,7 @@ async function buildDeliveryNotePdf({ storeName, date, items, otherItems }) {
     date,
     items,
     otherItems,
-    showCode: false,
+    showCode: !!showCode,
     withPaymentBox: false,
     taxLine: false,
   });
