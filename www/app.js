@@ -444,6 +444,223 @@ document.getElementById("reg-nyuko-submit-btn").addEventListener("click", async 
   }
 });
 
+// ===== 提携店からの依頼(パーツ購入依頼)処理 =====
+let requestsCache = [];
+let requestsLoaded = false;
+
+function switchTab(tab) {
+  const isRequests = tab === "requests";
+  document.getElementById("list-col").style.display = isRequests ? "none" : "";
+  document.getElementById("requests-col").style.display = isRequests ? "" : "none";
+  document.getElementById("tab-inventory-btn").classList.toggle("is-active", !isRequests);
+  document.getElementById("tab-requests-btn").classList.toggle("is-active", isRequests);
+  if (isRequests && !requestsLoaded) loadRequests();
+}
+document.getElementById("tab-inventory-btn").addEventListener("click", () => switchTab("inventory"));
+document.getElementById("tab-requests-btn").addEventListener("click", () => switchTab("requests"));
+
+async function loadRequests() {
+  const status = document.getElementById("requests-status");
+  status.textContent = "読み込み中...";
+  try {
+    const res = await fetch("/api/requests");
+    if (!res.ok) throw new Error((await res.json()).error || "取得に失敗しました");
+    requestsCache = await res.json();
+    requestsLoaded = true;
+    renderRequests();
+    status.textContent = `${requestsCache.length}件`;
+    const badge = document.getElementById("requests-badge");
+    if (requestsCache.length > 0) {
+      badge.textContent = requestsCache.length;
+      badge.style.display = "";
+    } else {
+      badge.style.display = "none";
+    }
+  } catch (e) {
+    status.textContent = "読み込みに失敗しました: " + e.message;
+  }
+}
+document.getElementById("requests-reload-btn").addEventListener("click", loadRequests);
+
+// バーコードから在庫アプリ側の在庫数(店舗別)を引く。見つからなければ0扱い。
+function lookupStock(barcode, store) {
+  if (!barcode) return null;
+  const item = inventoryCache.find((i) => i.barcode === barcode);
+  if (!item) return null;
+  return item.stocks?.[store] ?? 0;
+}
+
+// 依頼明細1行ぶんの出庫元・出庫数の初期値を決める。店舗に在庫があれば店舗優先、無ければ豊田倉庫、
+// どちらにも在庫が無ければ店舗を仮選択して出庫数0にする(担当者が手動で判断できるよう画面には警告を出す)。
+// 依頼数より在庫が少ない場合は、ある分だけ出庫し、残りは「不足分」として自動計算される。
+function suggestShipment(barcode, qty) {
+  const storeStock = lookupStock(barcode, STORES[0]);
+  if (storeStock !== null && storeStock > 0) return { store: STORES[0], qty: Math.min(storeStock, qty) };
+  const toyotaStock = lookupStock(barcode, STORES[1]);
+  if (toyotaStock !== null && toyotaStock > 0) return { store: STORES[1], qty: Math.min(toyotaStock, qty) };
+  return { store: STORES[0], qty: 0 };
+}
+
+function renderRequests() {
+  const container = document.getElementById("requests-list");
+  container.innerHTML = "";
+
+  if (requestsCache.length === 0) {
+    container.innerHTML = `<p class="hint">現在、対応待ちの依頼はありません。</p>`;
+    return;
+  }
+
+  requestsCache.forEach((request, reqIdx) => {
+    const card = document.createElement("div");
+    card.className = "request-card";
+    const totalCount = request.items.length + request.otherItems.length;
+    card.innerHTML = `
+      <div class="request-card-header">
+        <span class="tag tag-category">${request.sourceLabel}</span>
+        <span class="request-date">${request.date}</span>
+        <span class="request-store-name">${request.storeName ?? ""}</span>
+        <span class="request-count">明細${totalCount}件</span>
+        <button type="button" class="request-toggle-btn">詳細を開く</button>
+      </div>
+      <div class="request-detail" style="display:none;"></div>
+    `;
+    const toggleBtn = card.querySelector(".request-toggle-btn");
+    const detailEl = card.querySelector(".request-detail");
+    toggleBtn.addEventListener("click", () => {
+      const opening = detailEl.style.display === "none";
+      detailEl.style.display = opening ? "" : "none";
+      toggleBtn.textContent = opening ? "詳細を閉じる" : "詳細を開く";
+      if (opening && detailEl.innerHTML === "") renderRequestDetail(request, reqIdx, detailEl);
+    });
+    container.appendChild(card);
+  });
+}
+
+function renderRequestDetail(request, reqIdx, detailEl) {
+  const itemRows = request.items.map((item, itemIdx) => {
+    const storeStock = lookupStock(item.barcode, STORES[0]);
+    const toyotaStock = lookupStock(item.barcode, STORES[1]);
+    const suggested = suggestShipment(item.barcode, item.qty);
+    const shortage = (storeStock !== null ? storeStock : 0) < item.qty && (toyotaStock !== null ? toyotaStock : 0) < item.qty;
+    return `
+      <tr class="${shortage ? 'is-shortage' : ''}" data-kind="item" data-req="${reqIdx}" data-idx="${itemIdx}">
+        <td>${item.partNo}</td>
+        <td>${item.partName}</td>
+        <td>${item.qty}</td>
+        <td>${item.unit ?? ""}</td>
+        <td>${item.barcode ? (storeStock ?? '?') : '突合不可'}</td>
+        <td>${item.barcode ? (toyotaStock ?? '?') : '突合不可'}</td>
+        <td>
+          <select class="ship-store-select">
+            <option value="">出庫しない</option>
+            <option value="${STORES[0]}" ${suggested.store === STORES[0] ? 'selected' : ''}>${STORES[0]}</option>
+            <option value="${STORES[1]}" ${suggested.store === STORES[1] ? 'selected' : ''}>${STORES[1]}</option>
+          </select>
+        </td>
+        <td>
+          <input type="number" class="ship-qty-input" value="${suggested.qty}" min="0" max="${item.qty}">
+          <span class="ship-qty-of">/ ${item.qty}</span>
+          ${shortage ? '<div class="shortage-warn">⚠ 両店とも不足</div>' : ''}
+        </td>
+      </tr>`;
+  }).join("");
+
+  const otherRows = request.otherItems.map((item, itemIdx) => `
+    <tr data-kind="other" data-req="${reqIdx}" data-idx="${itemIdx}">
+      <td><input type="text" class="manual-partno-input" placeholder="(任意)パーツ番号"></td>
+      <td>${item.partName}${item.color ? `(${item.color})` : ''}</td>
+      <td>${item.qty}</td>
+      <td>-</td>
+      <td>手入力</td>
+      <td>手入力</td>
+      <td>
+        <select class="ship-store-select">
+          <option value="">出庫しない</option>
+          <option value="${STORES[0]}">${STORES[0]}</option>
+          <option value="${STORES[1]}">${STORES[1]}</option>
+        </select>
+      </td>
+      <td>${item.qty}(全量固定)</td>
+    </tr>`).join("");
+
+  detailEl.innerHTML = `
+    <div class="request-table-wrap">
+      <table class="request-table">
+        <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>依頼数</th><th>単位</th><th>${STORES[0]}在庫</th><th>${STORES[1]}在庫</th><th>出庫元</th><th>今回の出庫数</th></tr></thead>
+        <tbody>${itemRows}${otherRows}</tbody>
+      </table>
+    </div>
+    <p class="hint">今回の出庫数を依頼数より少なくすると、差分は「不足分」として新しい依頼レコードを自動作成します(発送日はこの登録日、店舗名などは元の依頼を引き継ぎます)。${request.otherItems.length > 0 ? '「その他」の明細はパーツマスタに無い特注品のため、パーツ番号は分かる範囲で手入力してください(空欄でも登録できます。不足分の自動作成はされないため、全量出庫できない場合は別途手動で対応してください)。' : ''}</p>
+    <button type="button" class="submit-btn request-fulfill-btn">この内容で出庫登録する</button>
+    <p class="result request-fulfill-result"></p>
+  `;
+
+  detailEl.querySelector(".request-fulfill-btn").addEventListener("click", () => fulfillRequest(request, detailEl));
+}
+
+async function fulfillRequest(request, detailEl) {
+  const resultEl = detailEl.querySelector(".request-fulfill-result");
+  const shipmentsByStore = {};
+  const shortages = [];
+
+  detailEl.querySelectorAll("tr[data-kind]").forEach((row) => {
+    const store = row.querySelector(".ship-store-select").value;
+    const kind = row.dataset.kind;
+    const idx = Number(row.dataset.idx);
+
+    if (kind === "item") {
+      const src = request.items[idx];
+      const qtyInput = row.querySelector(".ship-qty-input");
+      const actualQty = store ? Math.min(Math.max(Number(qtyInput.value) || 0, 0), src.qty) : 0;
+      if (actualQty > 0) {
+        if (!shipmentsByStore[store]) shipmentsByStore[store] = [];
+        shipmentsByStore[store].push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: actualQty });
+      }
+      const shortageQty = src.qty - actualQty;
+      if (shortageQty > 0) shortages.push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: shortageQty });
+    } else {
+      if (!store) return;
+      const src = request.otherItems[idx];
+      const manualPartNo = row.querySelector(".manual-partno-input").value.trim();
+      if (!shipmentsByStore[store]) shipmentsByStore[store] = [];
+      shipmentsByStore[store].push({ barcode: "", partNo: manualPartNo, partName: src.partName + (src.color ? `(${src.color})` : ""), unit: "", qty: src.qty });
+    }
+  });
+
+  const shipments = Object.keys(shipmentsByStore).map((store) => ({ store, items: shipmentsByStore[store] }));
+  if (shipments.length === 0) {
+    alert("出庫元が選択された明細がありません");
+    return;
+  }
+
+  resultEl.textContent = "登録中...";
+  resultEl.className = "result";
+  try {
+    const res = await fetch("/api/requests/fulfill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: request.source,
+        recordId: request.recordId,
+        date: new Date().toISOString().slice(0, 10),
+        shipments,
+        shortageItems: shortages,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "登録に失敗しました");
+    resultEl.textContent = shortages.length > 0
+      ? "出庫登録が完了しました(不足分は新しい依頼として作成しました)"
+      : "出庫登録が完了しました";
+    resultEl.className = "result ok";
+    loadInventory();
+    setTimeout(loadRequests, 1000);
+  } catch (e) {
+    resultEl.textContent = "エラー: " + e.message;
+    resultEl.className = "result error";
+  }
+}
+
 loadInventory();
 loadCategories();
 loadStores();

@@ -652,3 +652,138 @@ select.store-select,
 }
 
 .scanner-modal-inner #scanner-close-btn:hover { background: var(--accent-dark); }
+
+/* ===== タブ切り替え(在庫一覧 / 提携店からの依頼) ===== */
+.tab-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.tab-btn {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #fff;
+  opacity: 0.75;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tab-btn.is-active {
+  background: var(--bg);
+  color: var(--accent-dark);
+  opacity: 1;
+}
+
+.tab-badge {
+  display: inline-block;
+  margin-left: 6px;
+  background: var(--alert-text);
+  color: #fff;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+/* ===== 提携店からの依頼 ===== */
+.requests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.request-card {
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 1px 4px rgba(60,50,20,0.08);
+}
+
+.request-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.request-date, .request-store-name, .request-count {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.request-toggle-btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.request-toggle-btn:hover { background: var(--accent-dark); }
+
+.request-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.request-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 10px;
+}
+
+.request-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.request-table th, .request-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.request-table tr.is-shortage { background: var(--alert-bg); }
+
+.shortage-warn {
+  font-size: 11px;
+  color: var(--alert-text);
+  margin-top: 2px;
+}
+
+.ship-store-select, .manual-partno-input {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ship-qty-input {
+  width: 64px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ship-qty-of {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.request-fulfill-btn {
+  padding: 10px 18px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+.request-fulfill-btn:hover { background: var(--accent-dark); }

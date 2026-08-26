@@ -9,6 +9,10 @@
 <body>
 <header>
   <h1>在庫管理</h1>
+  <nav class="tab-nav">
+    <button type="button" id="tab-inventory-btn" class="tab-btn is-active">在庫一覧</button>
+    <button type="button" id="tab-requests-btn" class="tab-btn">提携店からの依頼<span id="requests-badge" class="tab-badge" style="display:none;"></span></button>
+  </nav>
   <a href="/logout" class="logout-link">ログアウト</a>
 </header>
 
@@ -33,6 +37,15 @@
       <span id="list-status" class="status"></span>
     </div>
     <div id="inventory-list" class="inventory-list"></div>
+  </section>
+
+  <section id="requests-col" class="requests-col" style="display:none;">
+    <div class="toolbar">
+      <p class="hint">発送準備が「準備中」かつ、まだ在庫アプリで出庫登録していない依頼だけを表示しています。</p>
+      <button id="requests-reload-btn">再読み込み</button>
+      <span id="requests-status" class="status"></span>
+    </div>
+    <div id="requests-list" class="requests-list"></div>
   </section>
 
   <div id="form-backdrop" class="form-backdrop"></div>

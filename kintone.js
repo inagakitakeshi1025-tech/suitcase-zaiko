@@ -1,7 +1,7 @@
 // kintoneとの通信をまとめたモジュール。
 // PowerShellプロトタイプ(_Common.ps1 / Server.ps1)の在庫計算ロジックをそのまま踏襲している。
 
-const APP_KEYS = ["ZAIKO", "SHUKKO", "NYUKO", "PARTS", "STORE"];
+const APP_KEYS = ["ZAIKO", "SHUKKO", "NYUKO", "PARTS", "STORE", "IRAI", "IRAI_MINUTE"];
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -19,6 +19,36 @@ for (const key of APP_KEYS) {
 
 // 対象の2店舗(在庫を分けて表示する単位)。店舗マスタが増えたら合わせて増やす想定。
 const STORES = ["スーツケース救急車", "豊田倉庫"];
+
+// 提携店からのパーツ購入依頼を管理しているkintoneアプリ(依頼元ごとに別アプリ)。
+// 「発注表」テーブルはパーツマスタ登録済みのパーツ、「その他」テーブルはパーツマスタに無い特注品(バーコード無し)。
+// 「発送準備」に相当するフィールドのコードが依頼元アプリによって異なる(依頼表=発送準備_0、ミニット用=発送準備)ので個別に持つ。
+// shortageTable: 依頼数より少なく出庫した際の不足分を書き込む専用テーブル(ルックアップ無し、直接入力のみ)。
+// 「発注表」はパーツマスタへのルックアップを含み、パーツ名の重複によりAPI経由では自動入力できないため新設した。
+// アプリごとにテーブル名・フィールドコードの命名(自動採番の"_0"サフィックス)が異なる点に注意。
+const REQUEST_SOURCES = [
+  {
+    key: "IRAI",
+    label: "スーツケース修理王",
+    shippingPrepField: "発送準備_0",
+    shortageTable: "不足分明細",
+  },
+  {
+    key: "IRAI_MINUTE",
+    label: "ミニット",
+    shippingPrepField: "発送準備",
+    shortageTable: "不足分_分納分明細",
+  },
+];
+
+// 不足分明細テーブル内のフィールドコードは、両アプリともテーブルコピーで自動生成されたもので共通("_0"サフィックス)。
+const SHORTAGE_TABLE_FIELDS = {
+  partNo: "パーツ番号_0",
+  partName: "パーツ名_0",
+  barcode: "バーコード番号_0",
+  unit: "単位_0",
+  qty: "購入数_0",
+};
 
 // 店舗ごとにアラート閾値(適正在庫数)を別フィールドで持つ。豊田倉庫は未入力なら
 // 常にアラート対象外(店舗側のような共通閾値へのフォールバックはしない)。
@@ -56,6 +86,20 @@ function getCategoryFromPartNo(partNo) {
 
 function authHeaders(appKey) {
   return { "X-Cybozu-API-Token": APP_TOKEN[appKey] };
+}
+
+// 依頼表アプリの「レコードのアクセス権限」は特定ユーザー/グループにしか編集を許可しておらず、
+// APIトークン経由の書き込み(Everyone扱い)は権限が無いため反映されない。そのため依頼表への
+// 書き込みだけは、権限を持つ実在のkintoneユーザー(サービスアカウント)としてパスワード認証を併用する。
+const SERVICE_LOGIN_ID = process.env.KINTONE_SERVICE_LOGIN_ID;
+const SERVICE_PASSWORD = process.env.KINTONE_SERVICE_PASSWORD;
+
+function requestAuthHeaders(appKey) {
+  const headers = authHeaders(appKey);
+  if (SERVICE_LOGIN_ID && SERVICE_PASSWORD) {
+    headers["X-Cybozu-Authorization"] = Buffer.from(`${SERVICE_LOGIN_ID}:${SERVICE_PASSWORD}`).toString("base64");
+  }
+  return headers;
 }
 
 // ルックアップフィールドを含むレコード追加/更新には、操作対象アプリのトークンだけでなく
@@ -338,6 +382,195 @@ async function addNyukoFromWeb(data) {
   });
 }
 
+// 出庫登録がまだの依頼(提携店からのパーツ購入依頼)を、依頼元アプリ横断で一覧取得する。
+// 「出庫登録日」が空のレコード=まだ在庫アプリから出庫登録していない依頼、という運用。
+async function getPendingRequests() {
+  // 依頼表側の「バーコード番号」欄は未入力のことが多いため、パーツ番号からPARTSマスタを逆引きして補完する。
+  const partsRecords = await getAllRecords("PARTS");
+  const barcodeByPartNo = {};
+  const unitByPartNo = {};
+  for (const r of partsRecords) {
+    const partNo = r["パーツ番号"]?.value;
+    if (!partNo) continue;
+    barcodeByPartNo[partNo] = r["バーコード番号"]?.value || "";
+    unitByPartNo[partNo] = r["単位・袋分け用"]?.value || "";
+  }
+
+  const results = [];
+  for (const { key, label, shippingPrepField, shortageTable } of REQUEST_SOURCES) {
+    // 「出庫登録日が空」だけだと、この機能を作る前の完了済み依頼(発送済み)まで全て該当してしまうため、
+    // 「発送準備が準備中」も条件に加えて絞り込む。日付フィールドの空チェックは is empty ではなく = "" を使う。
+    const query = `出庫登録日 = "" and ${shippingPrepField} in ("準備中")`;
+    const records = await getAllRecords(key, query);
+    for (const r of records) {
+      const fromOrderTable = (r["発注表"]?.value || [])
+        .map((row, tableRowIndex) => {
+          const partNo = row.value["パーツ番号"]?.value || "";
+          return {
+            partNo,
+            partName: row.value["パーツ名"]?.value || "",
+            barcode: row.value["バーコード番号"]?.value || barcodeByPartNo[partNo] || "",
+            unit: row.value["単位"]?.value || unitByPartNo[partNo] || "",
+            qty: Number(row.value["購入数"]?.value || 0),
+          };
+        })
+        .filter((item) => item.qty > 0);
+      // 以前この機能で「今回は不足」として作成された分(ルックアップ無しの専用テーブル)。
+      // フィールド構成は発注表と同じ意味を持つが、フィールドコードはアプリ側の自動採番("_0")になっている。
+      const fromShortageTable = (r[shortageTable]?.value || [])
+        .map((row) => {
+          const partNo = row.value[SHORTAGE_TABLE_FIELDS.partNo]?.value || "";
+          return {
+            partNo,
+            partName: row.value[SHORTAGE_TABLE_FIELDS.partName]?.value || "",
+            barcode: row.value[SHORTAGE_TABLE_FIELDS.barcode]?.value || barcodeByPartNo[partNo] || "",
+            unit: row.value[SHORTAGE_TABLE_FIELDS.unit]?.value || unitByPartNo[partNo] || "",
+            qty: Number(row.value[SHORTAGE_TABLE_FIELDS.qty]?.value || 0),
+          };
+        })
+        .filter((item) => item.qty > 0);
+      const items = [...fromOrderTable, ...fromShortageTable];
+      // 「その他」テーブルはパーツマスタに無い特注品でバーコードが無いため、在庫アプリからの自動突合はできない。
+      // 出庫登録自体は担当者が内容を見て手入力する前提の参考情報として返す。
+      const otherItems = (r["その他"]?.value || [])
+        .map((row) => ({
+          partName: row.value["パーツ名_その他"]?.value || "",
+          color: row.value["色_その他"]?.value || "",
+          qty: Number(row.value["購入数_その他"]?.value || 0),
+        }))
+        .filter((item) => item.qty > 0);
+      if (items.length === 0 && otherItems.length === 0) continue;
+      results.push({
+        source: key,
+        sourceLabel: label,
+        recordId: r["$id"]?.value,
+        date: r["日付"]?.value || "",
+        storeName: r["店舗名"]?.value || "",
+        items,
+        otherItems,
+      });
+    }
+  }
+  results.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  return results;
+}
+
+// 新規レコード作成時にそのままコピーしてよいフィールド型(逆に、レコード番号や集計項目・添付ファイルなど
+// システム側で自動設定される/コピーすべきでない型は除外する)。
+const COPYABLE_FIELD_TYPES = new Set([
+  "SINGLE_LINE_TEXT", "MULTI_LINE_TEXT", "NUMBER", "RADIO_BUTTON",
+  "CHECK_BOX", "DROP_DOWN", "MULTI_SELECT", "USER_SELECT", "LINK",
+]);
+
+async function getFieldTypeMap(appKey) {
+  const url = `${KINTONE_BASE_URL}/k/v1/app/form/fields.json?app=${APP_ID[appKey]}`;
+  const res = await fetch(url, { headers: authHeaders(appKey) });
+  if (!res.ok) throw new Error(`kintoneフィールド取得エラー: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  const map = {};
+  for (const [name, f] of Object.entries(json.properties)) map[name] = f.type;
+  return map;
+}
+
+// 依頼のうち今回出庫しきれなかった分を、元の依頼レコードの内容(店舗名・共有設定など)を引き継いだ
+// 新しい依頼レコードとして作成する。日付は「出庫登録した日」を入れ、出庫登録日は空のままにすることで、
+// 次にこの機能を開いたときに改めて「未処理の依頼」として一覧に出てくるようにする。
+// 明細は「発注表」テーブル(パーツマスタへのルックアップ)ではなく、ルックアップ無しの専用テーブル
+// (shortageTable)に書き込む。パーツ名の重複により、ルックアップはAPI経由では一意に解決できないため。
+async function createShortageRequest(source, date, shortageInfo) {
+  const sourceConfig = REQUEST_SOURCES.find((s) => s.key === source);
+  const [original, typeMap] = await Promise.all([
+    (async () => {
+      const res = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json?app=${APP_ID[source]}&id=${shortageInfo.recordId}`, {
+        headers: authHeaders(source),
+      });
+      if (!res.ok) throw new Error(`依頼レコード取得エラー: ${res.status} ${await res.text()}`);
+      const json = await res.json();
+      return json.record;
+    })(),
+    getFieldTypeMap(source),
+  ]);
+  if (!original) throw new Error(`元の依頼レコード(${shortageInfo.recordId})が見つかりません`);
+
+  const newRecord = {};
+  for (const [name, field] of Object.entries(original)) {
+    if (!COPYABLE_FIELD_TYPES.has(typeMap[name])) continue;
+    newRecord[name] = { value: field.value };
+  }
+
+  newRecord[sourceConfig.shortageTable] = {
+    value: shortageInfo.items.map((item) => ({
+      value: {
+        [SHORTAGE_TABLE_FIELDS.partNo]: { value: item.partNo || "" },
+        [SHORTAGE_TABLE_FIELDS.partName]: { value: item.partName || "" },
+        [SHORTAGE_TABLE_FIELDS.barcode]: { value: item.barcode || "" },
+        [SHORTAGE_TABLE_FIELDS.unit]: { value: item.unit || "" },
+        [SHORTAGE_TABLE_FIELDS.qty]: { value: Number(item.qty) },
+      },
+    })),
+  };
+  newRecord["日付"] = { value: date };
+
+  const headers = { ...requestAuthHeaders(source), "Content-Type": "application/json; charset=utf-8" };
+  const res = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ app: Number(APP_ID[source]), record: newRecord }),
+  });
+  if (!res.ok) throw new Error(`不足分依頼の作成エラー: ${res.status} ${await res.text()}`);
+  return await res.json();
+}
+
+// 依頼の明細を、指定された出庫元(店舗名)ごとに振り分けてSHUKKOへ出庫登録し、
+// 完了したら依頼表側のレコードに「出庫登録日」をセットして二重登録を防ぐ。
+// 依頼数より少なく出庫した分(shortageItems)があれば、その差分を新しい依頼レコードとして作り直す。
+async function fulfillRequest({ source, recordId, date, shipments, shortageItems }) {
+  if (!REQUEST_SOURCES.some((s) => s.key === source)) throw new Error(`不正な依頼元です: ${source}`);
+
+  const shukkoResults = [];
+  for (const shipment of shipments || []) {
+    const items = (shipment.items || []).filter((item) => Number(item.qty) > 0);
+    if (items.length === 0) continue;
+    const rows = items.map((item) => ({
+      バーコード番号: item.barcode || "",
+      パーツ番号: item.partNo || "",
+      パーツ名: item.partName || "",
+      "単位・袋分け用": item.unit || "",
+      出庫数: Number(item.qty),
+    }));
+    const result = await addOrAppendRecord({
+      appKey: "SHUKKO",
+      dateField: "出庫日",
+      storeField: "出庫元",
+      dateValue: date,
+      storeValue: shipment.store,
+      newRows: rows,
+      headerFields: { 出庫日: date, 出庫元: shipment.store },
+    });
+    shukkoResults.push({ store: shipment.store, ...result });
+  }
+
+  let shortageResult = null;
+  const validShortageItems = (shortageItems || []).filter((item) => Number(item.qty) > 0);
+  if (validShortageItems.length > 0) {
+    shortageResult = await createShortageRequest(source, date, { recordId, items: validShortageItems });
+  }
+
+  const headers = { ...requestAuthHeaders(source), "Content-Type": "application/json; charset=utf-8" };
+  const updateRes = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      app: Number(APP_ID[source]),
+      id: Number(recordId),
+      record: { 出庫登録日: { value: date } },
+    }),
+  });
+  if (!updateRes.ok) throw new Error(`依頼表の更新エラー: ${updateRes.status} ${await updateRes.text()}`);
+
+  return { shukkoResults, shortageResult };
+}
+
 async function fetchPartsImage(fileKey) {
   const url = `${KINTONE_BASE_URL}/k/v1/file.json?fileKey=${fileKey}`;
   const res = await fetch(url, { headers: authHeaders("PARTS") });
@@ -349,6 +582,7 @@ async function fetchPartsImage(fileKey) {
 
 module.exports = {
   STORES,
+  REQUEST_SOURCES,
   CATEGORY_MAP,
   getInventoryList,
   findPartsByKeyword,
@@ -356,4 +590,6 @@ module.exports = {
   addShukkoFromWeb,
   addNyukoFromWeb,
   fetchPartsImage,
+  getPendingRequests,
+  fulfillRequest,
 };

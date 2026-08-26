@@ -143,6 +143,25 @@ app.get("/api/stores", (req, res) => {
   res.json(kintone.STORES);
 });
 
+app.get("/api/requests", async (req, res) => {
+  try {
+    res.json(await kintone.getPendingRequests());
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/requests/fulfill", async (req, res) => {
+  try {
+    const result = await kintone.fulfillRequest(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // パーツ画像はkintoneから毎回取得すると遅いため、初回取得後はディスクにキャッシュして使い回す。
 app.get("/api/image", async (req, res) => {
   try {
