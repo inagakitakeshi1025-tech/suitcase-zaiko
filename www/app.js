@@ -451,16 +451,25 @@ let requestsLoaded = false;
 function switchTab(tab) {
   document.getElementById("list-col").style.display = tab === "inventory" ? "" : "none";
   document.getElementById("requests-col").style.display = tab === "requests" ? "" : "none";
-  document.getElementById("history-col").style.display = tab === "history" ? "" : "none";
   document.getElementById("tab-inventory-btn").classList.toggle("is-active", tab === "inventory");
   document.getElementById("tab-requests-btn").classList.toggle("is-active", tab === "requests");
-  document.getElementById("tab-history-btn").classList.toggle("is-active", tab === "history");
   if (tab === "requests" && !requestsLoaded) loadRequests();
-  if (tab === "history" && !historyLoaded) loadHistory();
 }
 document.getElementById("tab-inventory-btn").addEventListener("click", () => switchTab("inventory"));
 document.getElementById("tab-requests-btn").addEventListener("click", () => switchTab("requests"));
-document.getElementById("tab-history-btn").addEventListener("click", () => switchTab("history"));
+
+// 出庫・入庫登録ドロワー内の「新規登録」「登録履歴・削除」の切り替え。
+// 依頼処理の流れでは出庫・入庫のカードを直接触ることが無いため、独立タブにはせず
+// この登録ドロワーの中だけに置いている。
+function switchRegSection(section) {
+  document.getElementById("reg-form-section").style.display = section === "form" ? "" : "none";
+  document.getElementById("reg-history-section").style.display = section === "history" ? "" : "none";
+  document.getElementById("reg-section-form-btn").classList.toggle("is-active", section === "form");
+  document.getElementById("reg-section-history-btn").classList.toggle("is-active", section === "history");
+  if (section === "history" && !historyLoaded) loadHistory();
+}
+document.getElementById("reg-section-form-btn").addEventListener("click", () => switchRegSection("form"));
+document.getElementById("reg-section-history-btn").addEventListener("click", () => switchRegSection("history"));
 
 function currentRequestsStatus() {
   return document.getElementById("requests-status-select").value;
@@ -584,10 +593,22 @@ function renderRequests(status) {
 // 依頼レコードに分かれている点に注意。
 function renderCompletedRequestDetail(request, detailEl) {
   const itemRows = request.items
-    .map((item) => `<tr><td>${item.partNo}</td><td>${item.partName}</td><td>${item.qty}</td><td>${item.unit ?? ""}</td></tr>`)
+    .map(
+      (item) => `
+      <div class="item-row">
+        <div class="item-row-info"><strong>${item.partNo}</strong> ${item.partName}</div>
+        <div class="item-row-sub">依頼数 ${item.qty}${item.unit ? `(${item.unit})` : ""}</div>
+      </div>`
+    )
     .join("");
   const otherRows = request.otherItems
-    .map((item) => `<tr><td>-</td><td>${item.partName}${item.color ? `(${item.color})` : ""}</td><td>${item.qty}</td><td>-</td></tr>`)
+    .map(
+      (item) => `
+      <div class="item-row">
+        <div class="item-row-info">${item.partName}${item.color ? `(${item.color})` : ""}</div>
+        <div class="item-row-sub">依頼数 ${item.qty}</div>
+      </div>`
+    )
     .join("");
   const docsHtml = request.documents
     .map((doc) =>
@@ -600,12 +621,7 @@ function renderCompletedRequestDetail(request, detailEl) {
     )
     .join("");
   detailEl.innerHTML = `
-    <div class="request-table-wrap">
-      <table class="request-table">
-        <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>依頼数</th><th>単位</th></tr></thead>
-        <tbody>${itemRows}${otherRows}</tbody>
-      </table>
-    </div>
+    <div class="item-list">${itemRows}${otherRows}</div>
     <p class="hint">出庫登録日: ${request.shukkoDate ?? ""}(依頼数は元の依頼数です。実際の出庫数・不足分の扱いは添付PDFを確認してください)</p>
     <div class="pdf-actions">${docsHtml || '<span class="hint">添付されたPDFはありません。</span>'}</div>
   `;
@@ -624,53 +640,42 @@ function renderRequestDetail(request, reqIdx, detailEl) {
     const suggested = suggestShipment(item.barcode, item.qty);
     const shortage = (storeStock !== null ? storeStock : 0) < item.qty && (toyotaStock !== null ? toyotaStock : 0) < item.qty;
     return `
-      <tr class="${shortage ? 'is-shortage' : ''}" data-kind="item" data-req="${reqIdx}" data-idx="${itemIdx}">
-        <td>${item.partNo}</td>
-        <td>${item.partName}</td>
-        <td>${item.qty}</td>
-        <td>${item.unit ?? ""}</td>
-        <td>${item.barcode ? (storeStock ?? '?') : '突合不可'}</td>
-        <td>${item.barcode ? (toyotaStock ?? '?') : '突合不可'}</td>
-        <td>
+      <div class="item-row ${shortage ? 'is-shortage' : ''}" data-kind="item" data-req="${reqIdx}" data-idx="${itemIdx}">
+        <div class="item-row-info"><strong>${item.partNo}</strong> ${item.partName}</div>
+        <div class="item-row-sub">
+          依頼数 ${item.qty}${item.unit ? `(${item.unit})` : ''}
+          ／ ${STORES[0]}在庫: ${item.barcode ? (storeStock ?? '?') : '突合不可'}
+          ／ ${STORES[1]}在庫: ${item.barcode ? (toyotaStock ?? '?') : '突合不可'}
+        </div>
+        ${shortage ? '<div class="shortage-warn">⚠ 両店とも不足</div>' : ''}
+        <div class="item-row-controls">
           <select class="ship-store-select">
             <option value="">出庫しない</option>
             <option value="${STORES[0]}" ${suggested.store === STORES[0] ? 'selected' : ''}>${STORES[0]}</option>
             <option value="${STORES[1]}" ${suggested.store === STORES[1] ? 'selected' : ''}>${STORES[1]}</option>
           </select>
-        </td>
-        <td>
           <input type="number" class="ship-qty-input" value="${suggested.qty}" min="0" max="${item.qty}">
           <span class="ship-qty-of">/ ${item.qty}</span>
-          ${shortage ? '<div class="shortage-warn">⚠ 両店とも不足</div>' : ''}
-        </td>
-      </tr>`;
+        </div>
+      </div>`;
   }).join("");
 
   const otherRows = request.otherItems.map((item, itemIdx) => `
-    <tr data-kind="other" data-req="${reqIdx}" data-idx="${itemIdx}">
-      <td><input type="text" class="manual-partno-input" placeholder="(任意)パーツ番号"></td>
-      <td>${item.partName}${item.color ? `(${item.color})` : ''}</td>
-      <td>${item.qty}</td>
-      <td>-</td>
-      <td>手入力</td>
-      <td>手入力</td>
-      <td>
+    <div class="item-row" data-kind="other" data-req="${reqIdx}" data-idx="${itemIdx}">
+      <div class="item-row-info">${item.partName}${item.color ? `(${item.color})` : ''}</div>
+      <div class="item-row-sub">依頼数 ${item.qty}(全量固定・パーツマスタに無い特注品)</div>
+      <div class="item-row-controls">
+        <input type="text" class="manual-partno-input" placeholder="(任意)パーツ番号">
         <select class="ship-store-select">
           <option value="">出庫しない</option>
           <option value="${STORES[0]}">${STORES[0]}</option>
           <option value="${STORES[1]}">${STORES[1]}</option>
         </select>
-      </td>
-      <td>${item.qty}(全量固定)</td>
-    </tr>`).join("");
+      </div>
+    </div>`).join("");
 
   detailEl.innerHTML = `
-    <div class="request-table-wrap">
-      <table class="request-table">
-        <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>依頼数</th><th>単位</th><th>${STORES[0]}在庫</th><th>${STORES[1]}在庫</th><th>出庫元</th><th>今回の出庫数</th></tr></thead>
-        <tbody>${itemRows}${otherRows}</tbody>
-      </table>
-    </div>
+    <div class="item-list">${itemRows}${otherRows}</div>
     <p class="hint">今回の出庫数を依頼数より少なくすると、差分は「不足分」として新しい依頼レコードを自動作成します(発送日はこの登録日、店舗名などは元の依頼を引き継ぎます)。${request.otherItems.length > 0 ? '「その他」の明細はパーツマスタに無い特注品のため、パーツ番号は分かる範囲で手入力してください(空欄でも登録できます。不足分の自動作成はされないため、全量出庫できない場合は別途手動で対応してください)。' : ''}</p>
     <button type="button" class="submit-btn request-fulfill-btn">この内容で出庫登録する</button>
     <p class="result request-fulfill-result"></p>
@@ -687,7 +692,7 @@ async function fulfillRequest(request, detailEl) {
   const documentItems = [];
   const documentOtherItems = [];
 
-  detailEl.querySelectorAll("tr[data-kind]").forEach((row) => {
+  detailEl.querySelectorAll("[data-kind]").forEach((row) => {
     const store = row.querySelector(".ship-store-select").value;
     const kind = row.dataset.kind;
     const idx = Number(row.dataset.idx);
@@ -815,13 +820,11 @@ function renderHistory(appKey) {
     const rows = record.rows
       .map(
         (row) => `
-      <tr data-row-index="${row.rowIndex}">
-        <td>${row.partNo}</td>
-        <td>${row.partName}</td>
-        <td>${row.qty}</td>
-        <td>${row.unit ?? ""}</td>
-        <td><button type="button" class="request-delete-btn history-row-delete-btn">削除</button></td>
-      </tr>`
+      <div class="item-row" data-row-index="${row.rowIndex}">
+        <div class="item-row-info"><strong>${row.partNo}</strong> ${row.partName}</div>
+        <div class="item-row-sub">数量 ${row.qty}${row.unit ? `(${row.unit})` : ""}</div>
+        <button type="button" class="request-delete-btn history-row-delete-btn">削除</button>
+      </div>`
       )
       .join("");
     card.innerHTML = `
@@ -831,12 +834,7 @@ function renderHistory(appKey) {
         <span class="request-count">明細${record.rows.length}件</span>
         <button type="button" class="request-delete-btn history-record-delete-btn">この登録をまとめて削除</button>
       </div>
-      <div class="request-table-wrap" style="margin-top:10px;">
-        <table class="request-table">
-          <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>数量</th><th>単位</th><th></th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+      <div class="item-list" style="margin-top:10px;">${rows}</div>
     `;
 
     card.querySelector(".history-record-delete-btn").addEventListener("click", async () => {
@@ -858,9 +856,9 @@ function renderHistory(appKey) {
 
     card.querySelectorAll(".history-row-delete-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const row = btn.closest("tr");
+        const row = btn.closest(".item-row");
         const rowIndex = Number(row.dataset.rowIndex);
-        const partName = row.children[1].textContent;
+        const partName = row.querySelector(".item-row-info").textContent;
         if (!confirm(`この明細(${partName})を削除しますか？\n元に戻せません。`)) return;
         btn.disabled = true;
         try {

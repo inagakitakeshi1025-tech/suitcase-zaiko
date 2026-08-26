@@ -12,7 +12,6 @@
   <nav class="tab-nav">
     <button type="button" id="tab-inventory-btn" class="tab-btn is-active">在庫一覧</button>
     <button type="button" id="tab-requests-btn" class="tab-btn">提携店からの依頼<span id="requests-badge" class="tab-badge" style="display:none;"></span></button>
-    <button type="button" id="tab-history-btn" class="tab-btn">出庫・入庫の履歴</button>
   </nav>
   <a href="/logout" class="logout-link">ログアウト</a>
 </header>
@@ -53,19 +52,6 @@
     <div id="requests-list" class="requests-list"></div>
   </section>
 
-  <section id="history-col" class="requests-col" style="display:none;">
-    <div class="toolbar">
-      <select id="history-app-select">
-        <option value="SHUKKO">出庫表</option>
-        <option value="NYUKO">入庫表</option>
-      </select>
-      <p class="hint">直近30日分の登録を新しい順に表示しています。間違って登録した明細だけを選んで削除するか、その日の登録をまとめて削除できます。</p>
-      <button id="history-reload-btn">再読み込み</button>
-      <span id="history-status" class="status"></span>
-    </div>
-    <div id="history-list" class="requests-list"></div>
-  </section>
-
   <div id="form-backdrop" class="form-backdrop"></div>
   <aside id="form-col" class="form-col">
     <div class="record-form">
@@ -73,33 +59,53 @@
         <h2>出庫・入庫登録</h2>
         <button type="button" id="form-drawer-close-btn" class="drawer-close-btn">✕ 閉じる</button>
       </div>
-      <div class="field">
-        <label>日付</label>
-        <input type="date" id="reg-date" required>
-      </div>
-      <div class="field">
-        <label>店舗</label>
-        <select id="reg-store" class="store-select" required>
-          <option value="">選択してください</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>担当者(入庫登録時のみ使用)</label>
-        <input type="text" id="reg-tantosha" placeholder="例: 山田">
+      <nav class="drawer-subnav">
+        <button type="button" id="reg-section-form-btn" class="drawer-subnav-btn is-active">新規登録</button>
+        <button type="button" id="reg-section-history-btn" class="drawer-subnav-btn">登録履歴・削除</button>
+      </nav>
+
+      <div id="reg-form-section">
+        <div class="field">
+          <label>日付</label>
+          <input type="date" id="reg-date" required>
+        </div>
+        <div class="field">
+          <label>店舗</label>
+          <select id="reg-store" class="store-select" required>
+            <option value="">選択してください</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>担当者(入庫登録時のみ使用)</label>
+          <input type="text" id="reg-tantosha" placeholder="例: 山田">
+        </div>
+
+        <p class="hint">左の在庫一覧で目的のパーツを検索し、「＋ 出庫/入庫の明細に追加」から明細に追加してください。</p>
+
+        <h3>登録予定の明細(<span id="reg-cart-count">0</span>件)</h3>
+        <div class="cart-table-wrap">
+          <table class="cart-table">
+            <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>単位</th><th>数量</th><th></th></tr></thead>
+            <tbody id="reg-cart-body"></tbody>
+          </table>
+        </div>
+        <button type="button" id="reg-shukko-submit-btn" class="submit-btn">この内容でまとめて出庫登録する</button>
+        <button type="button" id="reg-nyuko-submit-btn" class="submit-btn submit-btn-secondary">この内容でまとめて入庫登録する</button>
+        <p id="reg-result" class="result"></p>
       </div>
 
-      <p class="hint">左の在庫一覧で目的のパーツを検索し、「＋ 出庫/入庫の明細に追加」から明細に追加してください。</p>
-
-      <h3>登録予定の明細(<span id="reg-cart-count">0</span>件)</h3>
-      <div class="cart-table-wrap">
-        <table class="cart-table">
-          <thead><tr><th>パーツ番号</th><th>パーツ名</th><th>単位</th><th>数量</th><th></th></tr></thead>
-          <tbody id="reg-cart-body"></tbody>
-        </table>
+      <div id="reg-history-section" style="display:none;">
+        <div class="toolbar">
+          <select id="history-app-select">
+            <option value="SHUKKO">出庫表</option>
+            <option value="NYUKO">入庫表</option>
+          </select>
+          <button id="history-reload-btn">再読み込み</button>
+          <span id="history-status" class="status"></span>
+        </div>
+        <p class="hint">直近30日分の登録を新しい順に表示しています。間違って登録した明細だけを選んで削除するか、その日の登録をまとめて削除できます。</p>
+        <div id="history-list"></div>
       </div>
-      <button type="button" id="reg-shukko-submit-btn" class="submit-btn">この内容でまとめて出庫登録する</button>
-      <button type="button" id="reg-nyuko-submit-btn" class="submit-btn submit-btn-secondary">この内容でまとめて入庫登録する</button>
-      <p id="reg-result" class="result"></p>
     </div>
   </aside>
 

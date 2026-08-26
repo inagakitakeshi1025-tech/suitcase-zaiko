@@ -94,6 +94,28 @@ main {
 .drawer-close-btn { display: none; }
 .drawer-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
+.drawer-subnav {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-subnav-btn {
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+
+.drawer-subnav-btn.is-active {
+  color: var(--accent-dark);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
 /* スマホ幅では出庫・入庫フォームを「通販アプリのカート」のように画面下からせり上がるシートにする。
    一覧をどれだけスクロールしていても、下部のバーから常に1タップでフォームへ到達できるようにするため。 */
 @media (max-width: 960px) {
@@ -741,30 +763,39 @@ select.store-select,
   border-top: 1px solid var(--border);
 }
 
-.request-table-wrap {
-  overflow-x: auto;
-  margin-bottom: 10px;
-}
+/* 依頼明細・登録履歴の1件ぶんの表示。横に長いtableだと画面の横スクロールが発生してしまうため、
+   情報を縦に積む形にして、どんな画面幅でも横スクロールなしで収まるようにしている。 */
+.item-list { border-top: 1px solid var(--border); }
 
-.request-table {
-  width: 100%;
-  border-collapse: collapse;
+.item-row {
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
-.request-table th, .request-table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  white-space: nowrap;
+.item-row.is-shortage { background: var(--alert-bg); }
+
+.item-row-info { margin-bottom: 4px; word-break: break-all; }
+.item-row-info strong { margin-right: 6px; }
+
+.item-row-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
 }
 
-.request-table tr.is-shortage { background: var(--alert-bg); }
+.item-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 .shortage-warn {
   font-size: 11px;
   color: var(--alert-text);
   margin-top: 2px;
+  margin-bottom: 6px;
 }
 
 .ship-store-select, .manual-partno-input {
