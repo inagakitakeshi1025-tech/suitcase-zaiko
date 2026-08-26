@@ -158,8 +158,9 @@ function buildDocument({ title, addressLabel, addressValue, date, items, otherIt
     layout: boxLayout(),
   };
 
-  // ラベルがある場合(修理王の「店舗名」)は、ラベル→下線→値の順。ラベルが無い場合
-  // (ミニットの請求書の宛名)は下線を宛名のすぐ下に置くため、値→下線の順にする。
+  // ラベルがある場合(修理王の「店舗名」)は、記入欄を模した固定長の下線をラベルの下に引く
+  // (店舗名の文字数に関わらず同じ見た目にするため)。ラベルが無い場合(ミニット向けの宛名)は
+  // 固定長の線だと文字幅とずれるため、テキスト自体に下線装飾を付けて文字幅ぴったりに揃える。
   const addressBlock = {
     width: "*",
     stack: addressLabel
@@ -168,10 +169,7 @@ function buildDocument({ title, addressLabel, addressValue, date, items, otherIt
           rule(220),
           { text: addressValue, fontSize: 15, margin: [0, 4, 0, 0] },
         ]
-      : [
-          { text: addressValue, fontSize: 15, margin: [0, 0, 0, 4] },
-          rule(220),
-        ],
+      : [{ text: addressValue, fontSize: 15, decoration: "underline", margin: [0, 0, 0, 4] }],
   };
 
   const amountRow = withPaymentBox
@@ -211,14 +209,16 @@ function buildDocument({ title, addressLabel, addressValue, date, items, otherIt
   return pdf.getBuffer();
 }
 
-// 納品書は修理王・ミニット共通で使う。パーツ番号/名称欄に何を出すかは書類種別ではなく
-// 依頼元で決まる(ミニットは自社名称ではなくミニット向け商品コード・名称を見せる必要がある)ため、
-// showCodeを呼び出し側(fulfillRequest)から渡してもらう。
+// 納品書は修理王・ミニット共通で使う。パーツ番号/名称欄に何を出すか、宛先に何を出すかは
+// どちらも書類種別ではなく依頼元で決まる(showCodeは実質「ミニット向けかどうか」を表す)。
+// ミニットの納品書はミニット宛にしか作らない(依頼データの「店舗名」は社内でどの店舗向けに
+// 準備するかの参考情報でしかなく、納品書の宛先ではない)ため、showCode時は請求書と同じ
+// 固定の取引先名を宛先にする。
 async function buildDeliveryNotePdf({ storeName, date, items, otherItems, showCode }) {
   return buildDocument({
     title: "納品書",
-    addressLabel: "店舗名",
-    addressValue: storeName || "",
+    addressLabel: showCode ? "" : "店舗名",
+    addressValue: showCode ? MINUTE_CUSTOMER_NAME : storeName || "",
     date,
     items,
     otherItems,
