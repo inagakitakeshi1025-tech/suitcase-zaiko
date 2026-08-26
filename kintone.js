@@ -513,6 +513,10 @@ async function getRequests(status = "pending") {
             qty: Number(row.value["購入数"]?.value || 0),
             price: Number(row.value["卸値"]?.value || 0) || priceByPartNo[partNo] || 0,
             minuteCode: row.value["ミニット商品コード"]?.value || minuteCodeByPartNo[partNo] || "",
+            // パーツ名_ミニット名称はIRAI_MINUTEの発注表にしか無いフィールドだが、無いアプリでは
+            // row.value["..."]がundefinedになるだけで安全(?.valueでエラーにならない)。
+            // ミニット向け請求書のパーツ番号/名称欄には、自社名称ではなくこちらを表示する。
+            minuteName: row.value["パーツ名_ミニット名称"]?.value || "",
           };
         })
         .filter((item) => item.qty > 0);
@@ -531,6 +535,7 @@ async function getRequests(status = "pending") {
             qty: Number(row.value[SHORTAGE_TABLE_FIELDS.qty]?.value || 0),
             price: Number(row.value[SHORTAGE_TABLE_FIELDS.price]?.value || 0) || priceByPartNo[partNo] || 0,
             minuteCode: minuteCodeByPartNo[partNo] || "",
+            minuteName: row.value["パーツ名_ミニット名称_0"]?.value || "",
           };
         })
         .filter((item) => item.qty > 0);

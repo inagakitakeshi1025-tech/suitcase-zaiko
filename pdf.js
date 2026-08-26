@@ -58,33 +58,33 @@ function tableLayout() {
   };
 }
 
+// showCode(ミニット向け請求書)のときは、自社のパーツ番号/パーツ名ではなく、ミニット商品コード・
+// ミニット向け名称(パーツ名_ミニット名称)を「パーツ番号/名称」欄に表示する。ミニット向け名称には
+// 自社パーツ番号が既にカッコ書きで含まれている(例:「アウトスペーサー（D-201）」)ため、
+// 修理王向け(showCode=false)と同じ2セル1見出しのレイアウトにそのまま流用できる。
 function buildMainTable(items, { showCode }) {
-  const headerRow = showCode
-    ? [{ text: "NO.", alignment: "center" }, { text: "商品コード", alignment: "center" }, { text: "パーツ名/パーツ番号", alignment: "center" }, { text: "単価", alignment: "center" }, { text: "購入数", alignment: "center" }, { text: "合計", alignment: "center" }]
-    : [{ text: "NO.", alignment: "center" }, { text: "パーツ番号/名称", colSpan: 2, alignment: "center" }, {}, { text: "単価", alignment: "center" }, { text: "購入数", alignment: "center" }, { text: "合計", alignment: "center" }];
-  const widths = showCode ? [24, 55, "*", 50, 40, 60] : [24, 55, "*", 50, 40, 60];
+  const headerRow = [
+    { text: "NO.", alignment: "center" },
+    { text: "パーツ番号/名称", colSpan: 2, alignment: "center" },
+    {},
+    { text: "単価", alignment: "center" },
+    { text: "購入数", alignment: "center" },
+    { text: "合計", alignment: "center" },
+  ];
+  const widths = [24, 55, "*", 50, 40, 60];
   const body = [headerRow];
   items.forEach((item, i) => {
     const lineTotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
-    if (showCode) {
-      body.push([
-        { text: String(i + 1), alignment: "center" },
-        item.minuteCode || "",
-        `${item.partName || ""}${item.partNo ? `(${item.partNo})` : ""}`,
-        { text: yen(item.price), alignment: "right" },
-        { text: String(item.qty), alignment: "right" },
-        { text: yen(lineTotal), alignment: "right" },
-      ]);
-    } else {
-      body.push([
-        { text: String(i + 1), alignment: "center" },
-        item.partNo || "",
-        item.partName || "",
-        { text: yen(item.price), alignment: "right" },
-        { text: String(item.qty), alignment: "right" },
-        { text: yen(lineTotal), alignment: "right" },
-      ]);
-    }
+    const code = showCode ? item.minuteCode || "" : item.partNo || "";
+    const name = showCode ? item.minuteName || item.partName || "" : item.partName || "";
+    body.push([
+      { text: String(i + 1), alignment: "center" },
+      code,
+      name,
+      { text: yen(item.price), alignment: "right" },
+      { text: String(item.qty), alignment: "right" },
+      { text: yen(lineTotal), alignment: "right" },
+    ]);
   });
   return { table: { headerRows: 1, widths, body }, layout: tableLayout(), margin: [0, 0, 0, 10] };
 }

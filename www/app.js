@@ -704,7 +704,7 @@ async function fulfillRequest(request, detailEl) {
       if (actualQty > 0) {
         if (!shipmentsByStore[store]) shipmentsByStore[store] = [];
         shipmentsByStore[store].push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: actualQty });
-        documentItems.push({ partNo: src.partNo, partName: src.partName, price: src.price, minuteCode: src.minuteCode, qty: actualQty });
+        documentItems.push({ partNo: src.partNo, partName: src.partName, price: src.price, minuteCode: src.minuteCode, minuteName: src.minuteName, qty: actualQty });
       }
       const shortageQty = src.qty - actualQty;
       if (shortageQty > 0) shortages.push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: shortageQty, price: src.price });
