@@ -1,6 +1,8 @@
 // kintoneとの通信をまとめたモジュール。
 // PowerShellプロトタイプ(_Common.ps1 / Server.ps1)の在庫計算ロジックをそのまま踏襲している。
 
+const { buildDeliveryNotePdf, buildInvoicePdf } = require("./pdf");
+
 const APP_KEYS = ["ZAIKO", "SHUKKO", "NYUKO", "PARTS", "STORE", "IRAI", "IRAI_MINUTE"];
 
 function requireEnv(name) {
@@ -26,18 +28,25 @@ const STORES = ["スーツケース救急車", "豊田倉庫"];
 // shortageTable: 依頼数より少なく出庫した際の不足分を書き込む専用テーブル(ルックアップ無し、直接入力のみ)。
 // 「発注表」はパーツマスタへのルックアップを含み、パーツ名の重複によりAPI経由では自動入力できないため新設した。
 // アプリごとにテーブル名・フィールドコードの命名(自動採番の"_0"サフィックス)が異なる点に注意。
+// docType/docField: 出庫登録時に自動生成するPDFの種類と、その添付先フィールド(両アプリにもとから
+// 存在する添付ファイル欄)。過去データを確認したところ、修理王は納品書のみ、ミニットは請求書のみを
+// 使う運用で一貫していたため、依頼元ごとに1種類だけ生成する。
 const REQUEST_SOURCES = [
   {
     key: "IRAI",
     label: "スーツケース修理王",
     shippingPrepField: "発送準備_0",
     shortageTable: "不足分明細",
+    docType: "delivery",
+    docField: "納品書",
   },
   {
     key: "IRAI_MINUTE",
     label: "ミニット",
     shippingPrepField: "発送準備",
     shortageTable: "不足分_分納分明細",
+    docType: "invoice",
+    docField: "請求書",
   },
 ];
 
@@ -48,6 +57,7 @@ const SHORTAGE_TABLE_FIELDS = {
   barcode: "バーコード番号_0",
   unit: "単位_0",
   qty: "購入数_0",
+  price: "卸値_0",
 };
 
 // 店舗ごとにアラート閾値(適正在庫数)を別フィールドで持つ。豊田倉庫は未入力なら
@@ -389,11 +399,15 @@ async function getPendingRequests() {
   const partsRecords = await getAllRecords("PARTS");
   const barcodeByPartNo = {};
   const unitByPartNo = {};
+  const priceByPartNo = {};
+  const minuteCodeByPartNo = {};
   for (const r of partsRecords) {
     const partNo = r["パーツ番号"]?.value;
     if (!partNo) continue;
     barcodeByPartNo[partNo] = r["バーコード番号"]?.value || "";
     unitByPartNo[partNo] = r["単位・袋分け用"]?.value || "";
+    priceByPartNo[partNo] = Number(r["卸値"]?.value || 0);
+    minuteCodeByPartNo[partNo] = r["ミニット商品コード"]?.value || "";
   }
 
   const results = [];
@@ -412,11 +426,15 @@ async function getPendingRequests() {
             barcode: row.value["バーコード番号"]?.value || barcodeByPartNo[partNo] || "",
             unit: row.value["単位"]?.value || unitByPartNo[partNo] || "",
             qty: Number(row.value["購入数"]?.value || 0),
+            price: Number(row.value["卸値"]?.value || 0) || priceByPartNo[partNo] || 0,
+            minuteCode: row.value["ミニット商品コード"]?.value || minuteCodeByPartNo[partNo] || "",
           };
         })
         .filter((item) => item.qty > 0);
       // 以前この機能で「今回は不足」として作成された分(ルックアップ無しの専用テーブル)。
       // フィールド構成は発注表と同じ意味を持つが、フィールドコードはアプリ側の自動採番("_0")になっている。
+      // 単価・ミニット商品コードはこのテーブルには持たせていない(無いレコードもある)ため、
+      // 常にパーツマスタ側の値をフォールバックとして使う。
       const fromShortageTable = (r[shortageTable]?.value || [])
         .map((row) => {
           const partNo = row.value[SHORTAGE_TABLE_FIELDS.partNo]?.value || "";
@@ -426,6 +444,8 @@ async function getPendingRequests() {
             barcode: row.value[SHORTAGE_TABLE_FIELDS.barcode]?.value || barcodeByPartNo[partNo] || "",
             unit: row.value[SHORTAGE_TABLE_FIELDS.unit]?.value || unitByPartNo[partNo] || "",
             qty: Number(row.value[SHORTAGE_TABLE_FIELDS.qty]?.value || 0),
+            price: Number(row.value[SHORTAGE_TABLE_FIELDS.price]?.value || 0) || priceByPartNo[partNo] || 0,
+            minuteCode: minuteCodeByPartNo[partNo] || "",
           };
         })
         .filter((item) => item.qty > 0);
@@ -437,6 +457,7 @@ async function getPendingRequests() {
           partName: row.value["パーツ名_その他"]?.value || "",
           color: row.value["色_その他"]?.value || "",
           qty: Number(row.value["購入数_その他"]?.value || 0),
+          price: Number(row.value["卸値_その他"]?.value || 0),
         }))
         .filter((item) => item.qty > 0);
       if (items.length === 0 && otherItems.length === 0) continue;
@@ -451,7 +472,7 @@ async function getPendingRequests() {
       });
     }
   }
-  results.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  results.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   return results;
 }
 
@@ -506,6 +527,7 @@ async function createShortageRequest(source, date, shortageInfo) {
         [SHORTAGE_TABLE_FIELDS.barcode]: { value: item.barcode || "" },
         [SHORTAGE_TABLE_FIELDS.unit]: { value: item.unit || "" },
         [SHORTAGE_TABLE_FIELDS.qty]: { value: Number(item.qty) },
+        [SHORTAGE_TABLE_FIELDS.price]: { value: Number(item.price) || 0 },
       },
     })),
   };
@@ -521,11 +543,28 @@ async function createShortageRequest(source, date, shortageInfo) {
   return await res.json();
 }
 
+// PDFファイルをkintoneにアップロードし、後で record.json のFILEフィールド値として使えるfileKeyを得る。
+async function uploadFileToKintone(appKey, buffer, filename) {
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type: "application/pdf" }), filename);
+  const res = await fetch(`${KINTONE_BASE_URL}/k/v1/file.json`, {
+    method: "POST",
+    headers: requestAuthHeaders(appKey),
+    body: form,
+  });
+  if (!res.ok) throw new Error(`kintoneファイルアップロードエラー: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  return json.fileKey;
+}
+
 // 依頼の明細を、指定された出庫元(店舗名)ごとに振り分けてSHUKKOへ出庫登録し、
 // 完了したら依頼表側のレコードに「出庫登録日」をセットして二重登録を防ぐ。
 // 依頼数より少なく出庫した分(shortageItems)があれば、その差分を新しい依頼レコードとして作り直す。
-async function fulfillRequest({ source, recordId, date, shipments, shortageItems }) {
-  if (!REQUEST_SOURCES.some((s) => s.key === source)) throw new Error(`不正な依頼元です: ${source}`);
+// documentItems/documentOtherItemsは「実際に出庫した分」で、この内容から納品書/請求書PDFを生成し、
+// 依頼表アプリにもとから存在する添付ファイル欄(納品書 or 請求書)へ自動アップロードする。
+async function fulfillRequest({ source, recordId, date, shipments, shortageItems, documentItems, documentOtherItems, requestStoreName }) {
+  const sourceConfig = REQUEST_SOURCES.find((s) => s.key === source);
+  if (!sourceConfig) throw new Error(`不正な依頼元です: ${source}`);
 
   const shukkoResults = [];
   for (const shipment of shipments || []) {
@@ -556,19 +595,30 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
     shortageResult = await createShortageRequest(source, date, { recordId, items: validShortageItems });
   }
 
+  const docItems = (documentItems || []).filter((item) => Number(item.qty) > 0);
+  const docOtherItems = (documentOtherItems || []).filter((item) => Number(item.qty) > 0);
+  let pdfBase64 = null;
+  let pdfFilename = null;
+  const record = { 出庫登録日: { value: date } };
+  if (docItems.length > 0 || docOtherItems.length > 0) {
+    const buildPdf = sourceConfig.docType === "invoice" ? buildInvoicePdf : buildDeliveryNotePdf;
+    const buffer = await buildPdf({ storeName: requestStoreName, date, items: docItems, otherItems: docOtherItems });
+    const timestamp = new Date().toISOString().replace("T", "_").replace(/:/g, "-").slice(0, 19);
+    pdfFilename = `report_${timestamp}.pdf`;
+    pdfBase64 = buffer.toString("base64");
+    const fileKey = await uploadFileToKintone(source, buffer, pdfFilename);
+    record[sourceConfig.docField] = { value: [{ fileKey }] };
+  }
+
   const headers = { ...requestAuthHeaders(source), "Content-Type": "application/json; charset=utf-8" };
   const updateRes = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json`, {
     method: "PUT",
     headers,
-    body: JSON.stringify({
-      app: Number(APP_ID[source]),
-      id: Number(recordId),
-      record: { 出庫登録日: { value: date } },
-    }),
+    body: JSON.stringify({ app: Number(APP_ID[source]), id: Number(recordId), record }),
   });
   if (!updateRes.ok) throw new Error(`依頼表の更新エラー: ${updateRes.status} ${await updateRes.text()}`);
 
-  return { shukkoResults, shortageResult };
+  return { shukkoResults, shortageResult, pdfBase64, pdfFilename };
 }
 
 async function fetchPartsImage(fileKey) {

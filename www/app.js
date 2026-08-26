@@ -602,6 +602,9 @@ async function fulfillRequest(request, detailEl) {
   const resultEl = detailEl.querySelector(".request-fulfill-result");
   const shipmentsByStore = {};
   const shortages = [];
+  // 出庫元(店舗/豊田倉庫)には関係なく、「今回実際に出庫する分」をまとめて納品書/請求書PDFの明細にする。
+  const documentItems = [];
+  const documentOtherItems = [];
 
   detailEl.querySelectorAll("tr[data-kind]").forEach((row) => {
     const store = row.querySelector(".ship-store-select").value;
@@ -615,15 +618,17 @@ async function fulfillRequest(request, detailEl) {
       if (actualQty > 0) {
         if (!shipmentsByStore[store]) shipmentsByStore[store] = [];
         shipmentsByStore[store].push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: actualQty });
+        documentItems.push({ partNo: src.partNo, partName: src.partName, price: src.price, minuteCode: src.minuteCode, qty: actualQty });
       }
       const shortageQty = src.qty - actualQty;
-      if (shortageQty > 0) shortages.push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: shortageQty });
+      if (shortageQty > 0) shortages.push({ barcode: src.barcode, partNo: src.partNo, partName: src.partName, unit: src.unit, qty: shortageQty, price: src.price });
     } else {
       if (!store) return;
       const src = request.otherItems[idx];
       const manualPartNo = row.querySelector(".manual-partno-input").value.trim();
       if (!shipmentsByStore[store]) shipmentsByStore[store] = [];
       shipmentsByStore[store].push({ barcode: "", partNo: manualPartNo, partName: src.partName + (src.color ? `(${src.color})` : ""), unit: "", qty: src.qty });
+      documentOtherItems.push({ partName: src.partName, color: src.color, price: src.price, qty: src.qty });
     }
   });
 
@@ -645,14 +650,39 @@ async function fulfillRequest(request, detailEl) {
         date: new Date().toISOString().slice(0, 10),
         shipments,
         shortageItems: shortages,
+        documentItems,
+        documentOtherItems,
+        requestStoreName: request.storeName,
       }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "登録に失敗しました");
+    const docLabel = request.source === "IRAI_MINUTE" ? "請求書" : "納品書";
     resultEl.textContent = shortages.length > 0
       ? "出庫登録が完了しました(不足分は新しい依頼として作成しました)"
       : "出庫登録が完了しました";
     resultEl.className = "result ok";
+    if (json.pdfBase64) {
+      const byteChars = atob(json.pdfBase64);
+      const bytes = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
+      const actions = document.createElement("div");
+      actions.className = "pdf-actions";
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.textContent = `${docLabel}を開く(印刷・保存)`;
+      openBtn.addEventListener("click", () => window.open(blobUrl, "_blank"));
+      const downloadLink = document.createElement("a");
+      downloadLink.href = blobUrl;
+      downloadLink.download = json.pdfFilename || `${docLabel}.pdf`;
+      downloadLink.textContent = `${docLabel}をPCにダウンロード`;
+      downloadLink.className = "pdf-download-link";
+      actions.appendChild(openBtn);
+      actions.appendChild(downloadLink);
+      resultEl.after(actions);
+    }
     loadInventory();
     setTimeout(loadRequests, 1000);
   } catch (e) {

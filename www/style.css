@@ -787,3 +787,25 @@ select.store-select,
 }
 
 .request-fulfill-btn:hover { background: var(--accent-dark); }
+
+.pdf-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.pdf-actions button, .pdf-download-link {
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pdf-actions button:hover, .pdf-download-link:hover {
+  background: var(--accent);
+  color: #fff;
+}
