@@ -47,6 +47,7 @@
       </select>
       <p class="hint" id="requests-hint">発送準備が「準備中」かつ、まだ在庫アプリで出庫登録していない依頼だけを表示しています。</p>
       <button id="requests-reload-btn">再読み込み</button>
+      <button id="request-create-open-btn">＋ 新規依頼を作成</button>
       <span id="requests-status" class="status"></span>
     </div>
     <div id="requests-list" class="requests-list"></div>
@@ -118,6 +119,54 @@
 <div id="image-modal" class="modal-overlay" style="display:none;">
   <div class="image-modal-inner">
     <img id="image-modal-img" src="" alt="パーツ画像拡大">
+  </div>
+</div>
+
+<div id="request-create-modal" class="modal-overlay" style="display:none;">
+  <div class="request-create-inner">
+    <div class="drawer-header">
+      <h3>新規依頼を作成</h3>
+      <button type="button" id="rc-close-btn" class="modal-close-btn">✕ 閉じる</button>
+    </div>
+
+    <div class="field">
+      <label>依頼元</label>
+      <select id="rc-source-select">
+        <option value="IRAI">スーツケース修理王</option>
+        <option value="IRAI_MINUTE">ミニット</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>日付</label>
+      <input type="date" id="rc-date">
+    </div>
+    <div class="field">
+      <label>店舗名</label>
+      <input type="text" id="rc-store-name" list="rc-store-names-list" placeholder="候補から選ぶか、既存の依頼と同じ表記で入力してください">
+      <datalist id="rc-store-names-list"></datalist>
+      <p class="hint">店舗名は既存の依頼で使われている表記と完全に一致していないと作成に失敗します。候補一覧から選んでください。</p>
+    </div>
+
+    <div id="rc-manual-section">
+      <div class="field">
+        <label>パーツ検索(パーツ番号・パーツ名・バーコード)</label>
+        <input type="text" id="rc-search-box" placeholder="検索キーワードを入力">
+      </div>
+      <div id="rc-search-results" class="item-list"></div>
+      <h3>追加した明細(<span id="rc-cart-count">0</span>件)</h3>
+      <div id="rc-cart-list" class="item-list"></div>
+    </div>
+
+    <div id="rc-paste-section" style="display:none;">
+      <p class="hint">Excelの表(商品コード・商品名・貴社品番・単価・発注数の列を含む範囲)をコピーして、下の欄に貼り付けてください。見出し行が含まれていても自動で無視します。</p>
+      <textarea id="rc-paste-textarea" rows="8" placeholder="ここにExcelから貼り付け"></textarea>
+      <button type="button" id="rc-parse-btn" class="submit-btn submit-btn-secondary">貼り付けた内容を解析する</button>
+      <h3>解析結果(<span id="rc-paste-count">0</span>件)</h3>
+      <div id="rc-paste-preview" class="item-list"></div>
+    </div>
+
+    <button type="button" id="rc-submit-btn" class="submit-btn">この内容で依頼を作成する</button>
+    <p id="rc-result" class="result"></p>
   </div>
 </div>
 

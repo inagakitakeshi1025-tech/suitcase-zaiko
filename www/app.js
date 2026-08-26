@@ -891,6 +891,223 @@ function renderHistory(appKey) {
   });
 }
 
+// ===== 新規依頼の作成(修理王: 手動入力 / ミニット: Excel貼り付け) =====
+let rcCart = []; // 修理王: パーツ検索して手動で追加した明細
+let rcParsedItems = []; // ミニット: 貼り付け解析後の明細
+
+function openRequestCreateModal() {
+  document.getElementById("request-create-modal").style.display = "flex";
+  loadRcStoreNames();
+}
+function closeRequestCreateModal() {
+  document.getElementById("request-create-modal").style.display = "none";
+}
+document.getElementById("request-create-open-btn").addEventListener("click", openRequestCreateModal);
+document.getElementById("rc-close-btn").addEventListener("click", closeRequestCreateModal);
+document.getElementById("request-create-modal").addEventListener("click", (e) => {
+  if (e.target.id === "request-create-modal") closeRequestCreateModal();
+});
+
+function rcCurrentSource() {
+  return document.getElementById("rc-source-select").value;
+}
+
+function switchRcSection() {
+  const source = rcCurrentSource();
+  document.getElementById("rc-manual-section").style.display = source === "IRAI" ? "" : "none";
+  document.getElementById("rc-paste-section").style.display = source === "IRAI_MINUTE" ? "" : "none";
+}
+document.getElementById("rc-source-select").addEventListener("change", () => {
+  switchRcSection();
+  loadRcStoreNames();
+});
+switchRcSection();
+
+// 店舗名は既存の依頼で実際に使われている表記でないと作成に失敗するため、候補一覧を都度取得する。
+async function loadRcStoreNames() {
+  const source = rcCurrentSource();
+  const listEl = document.getElementById("rc-store-names-list");
+  try {
+    const res = await fetch("/api/requests/store-names?source=" + encodeURIComponent(source));
+    const names = await res.json();
+    listEl.innerHTML = names.map((name) => `<option value="${name}"></option>`).join("");
+  } catch (err) {
+    listEl.innerHTML = "";
+  }
+}
+
+// --- 修理王: パーツを検索して手動で明細に追加 ---
+let rcSearchTimer = null;
+let rcSearchResultsCache = [];
+document.getElementById("rc-search-box").addEventListener("input", (e) => {
+  clearTimeout(rcSearchTimer);
+  const keyword = e.target.value.trim();
+  const resultsEl = document.getElementById("rc-search-results");
+  if (!keyword) { resultsEl.innerHTML = ""; return; }
+  rcSearchTimer = setTimeout(async () => {
+    try {
+      const res = await fetch("/api/search?keyword=" + encodeURIComponent(keyword));
+      rcSearchResultsCache = await res.json();
+      renderRcSearchResults();
+    } catch (err) {
+      resultsEl.innerHTML = `<p class="hint">検索に失敗しました</p>`;
+    }
+  }, 300);
+});
+
+function renderRcSearchResults() {
+  const resultsEl = document.getElementById("rc-search-results");
+  if (rcSearchResultsCache.length === 0) {
+    resultsEl.innerHTML = `<p class="hint">見つかりませんでした</p>`;
+    return;
+  }
+  resultsEl.innerHTML = rcSearchResultsCache.map((item, idx) => `
+    <div class="item-row">
+      <div class="item-row-info"><strong>${item.partNo}</strong> ${item.partName}</div>
+      <div class="item-row-sub">バーコード:${item.barcode ?? ""}${item.unit ? ` ・単位:${item.unit}` : ""}</div>
+      <button type="button" class="add-to-cart-btn rc-add-btn" data-idx="${idx}">＋ 明細に追加</button>
+    </div>`).join("");
+  resultsEl.querySelectorAll(".rc-add-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = rcSearchResultsCache[Number(btn.dataset.idx)];
+      rcCart.push({ partNo: item.partNo, partName: item.partName, unit: item.unit, barcode: item.barcode, qty: 1 });
+      renderRcCart();
+    });
+  });
+}
+
+function renderRcCart() {
+  const listEl = document.getElementById("rc-cart-list");
+  document.getElementById("rc-cart-count").textContent = rcCart.length;
+  listEl.innerHTML = rcCart.map((item, idx) => `
+    <div class="item-row">
+      <div class="item-row-info"><strong>${item.partNo}</strong> ${item.partName}</div>
+      <div class="item-row-controls">
+        <input type="number" class="rc-cart-qty-input" min="1" value="${item.qty}" data-idx="${idx}">
+        <button type="button" class="request-delete-btn rc-cart-remove-btn" data-idx="${idx}">削除</button>
+      </div>
+    </div>`).join("");
+  listEl.querySelectorAll(".rc-cart-qty-input").forEach((input) => {
+    input.addEventListener("change", () => {
+      const idx = Number(input.dataset.idx);
+      const qty = Number(input.value);
+      rcCart[idx].qty = qty > 0 ? qty : 1;
+      input.value = rcCart[idx].qty;
+    });
+  });
+  listEl.querySelectorAll(".rc-cart-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      rcCart.splice(Number(btn.dataset.idx), 1);
+      renderRcCart();
+    });
+  });
+}
+
+// --- ミニット: Excelから貼り付けたタブ区切りデータを解析 ---
+// 列の並びは 商品コード / 商品名 / 貴社品番(パーツ番号) / 単価 / 発注数 を想定(合計金額など余分な列は無視)。
+// 1列目が数値でない行は見出し行とみなして自動的に除外する。
+function parseRcPasteText(text) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  const rows = lines.map((line) => line.split("\t").map((cell) => cell.trim()));
+  const dataRows = rows.filter((cols) => cols.length >= 5 && !Number.isNaN(Number(cols[0].replace(/,/g, ""))));
+  return dataRows
+    .map((cols) => ({
+      minuteCode: cols[0],
+      minuteName: cols[1],
+      partNo: cols[2],
+      price: Number((cols[3] || "0").replace(/,/g, "")) || 0,
+      qty: Number((cols[4] || "0").replace(/,/g, "")) || 0,
+    }))
+    .filter((item) => item.partNo && item.qty > 0);
+}
+
+document.getElementById("rc-parse-btn").addEventListener("click", async () => {
+  const text = document.getElementById("rc-paste-textarea").value;
+  const parsed = parseRcPasteText(text);
+  const previewEl = document.getElementById("rc-paste-preview");
+  if (parsed.length === 0) {
+    rcParsedItems = [];
+    document.getElementById("rc-paste-count").textContent = "0";
+    previewEl.innerHTML = `<p class="hint">貼り付けた内容から明細を読み取れませんでした。列の並び(商品コード・商品名・貴社品番・単価・発注数)を確認してください。</p>`;
+    return;
+  }
+  previewEl.innerHTML = `<p class="hint">パーツマスタと突き合わせ中...</p>`;
+  try {
+    const res = await fetch("/api/parts/lookup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partNos: parsed.map((i) => i.partNo) }),
+    });
+    const partsMap = await res.json();
+    rcParsedItems = parsed;
+    document.getElementById("rc-paste-count").textContent = parsed.length;
+    previewEl.innerHTML = parsed.map((item) => {
+      const master = partsMap[item.partNo];
+      return `
+      <div class="item-row ${master ? "" : "is-shortage"}">
+        <div class="item-row-info"><strong>${item.partNo}</strong> ${item.minuteName}</div>
+        <div class="item-row-sub">数量 ${item.qty} ・ 単価 ${item.price}円${
+          master
+            ? ` ・ マスタ一致: ${master.partName}(バーコード:${master.barcode || "なし"})`
+            : " ・ ⚠ パーツマスタに見つかりません(バーコード等は空欄で登録されます。パーツ番号の入力ミスがないか確認してください)"
+        }</div>
+      </div>`;
+    }).join("");
+  } catch (err) {
+    previewEl.innerHTML = `<p class="hint">突き合わせに失敗しました: ${err.message}</p>`;
+  }
+});
+
+// --- 送信 ---
+document.getElementById("rc-submit-btn").addEventListener("click", async () => {
+  const source = rcCurrentSource();
+  const date = document.getElementById("rc-date").value;
+  const storeName = document.getElementById("rc-store-name").value.trim();
+  const resultEl = document.getElementById("rc-result");
+  if (!date) { alert("日付を入力してください"); return; }
+
+  const items = source === "IRAI"
+    ? rcCart.map((i) => ({ partNo: i.partNo, qty: i.qty }))
+    : rcParsedItems.map((i) => ({ partNo: i.partNo, qty: i.qty, price: i.price, minuteCode: i.minuteCode, minuteName: i.minuteName }));
+
+  if (items.length === 0) { alert("明細を1件以上追加してください"); return; }
+
+  const submitBtn = document.getElementById("rc-submit-btn");
+  submitBtn.disabled = true;
+  resultEl.textContent = "登録中...";
+  resultEl.className = "result";
+  try {
+    const res = await fetch("/api/requests/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, date, storeName, items }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "作成に失敗しました");
+    resultEl.textContent = `依頼を作成しました(明細${json.rowCount}件)${
+      json.unmatchedPartNos && json.unmatchedPartNos.length > 0
+        ? ` ※パーツマスタに見つからなかった番号: ${json.unmatchedPartNos.join(", ")}`
+        : ""
+    }`;
+    resultEl.className = "result ok";
+    rcCart = [];
+    rcParsedItems = [];
+    document.getElementById("rc-paste-textarea").value = "";
+    document.getElementById("rc-paste-preview").innerHTML = "";
+    document.getElementById("rc-paste-count").textContent = "0";
+    document.getElementById("rc-search-box").value = "";
+    document.getElementById("rc-search-results").innerHTML = "";
+    renderRcCart();
+    loadRequests();
+    setTimeout(closeRequestCreateModal, 1200);
+  } catch (err) {
+    resultEl.textContent = "エラー: " + err.message;
+    resultEl.className = "result error";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
 loadInventory();
 loadCategories();
 loadStores();

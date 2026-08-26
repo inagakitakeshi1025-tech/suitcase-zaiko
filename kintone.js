@@ -582,6 +582,155 @@ async function fetchRequestDocument(source, fileKey) {
   return { buffer, contentType };
 }
 
+// パーツ番号の配列から、パーツマスタのバーコード・パーツ名・単位・卸値・ミニット商品コードを
+// まとめて逆引きする。新規依頼作成でパーツ番号だけ分かっている場合(手入力・ミニットのExcel
+// 貼り付けとも共通)に使う。
+async function lookupPartsByPartNos(partNos) {
+  const uniq = [...new Set((partNos || []).filter(Boolean))];
+  if (uniq.length === 0) return {};
+  const q = `パーツ番号 in (${uniq.map((p) => `"${p.replace(/"/g, '\\"')}"`).join(",")})`;
+  const records = await getAllRecords("PARTS", q);
+  const map = {};
+  for (const r of records) {
+    const partNo = r["パーツ番号"]?.value;
+    if (!partNo) continue;
+    map[partNo] = {
+      partName: r["パーツ名"]?.value || "",
+      barcode: r["バーコード番号"]?.value || "",
+      unit: r["単位・袋分け用"]?.value || "",
+      price: Number(r["卸値"]?.value || 0),
+      minuteCode: r["ミニット商品コード"]?.value || "",
+    };
+  }
+  return map;
+}
+
+// 依頼表アプリの「店舗名」も実は隠れたルックアップキー(店舗名_検索)を持っており、実在しない
+// 文字列を入れるとレコード作成自体がGAIA_LO04エラーになる。自由入力を許すと表記ゆれで
+// 高確率で失敗するため、新規依頼作成画面では過去の依頼で実際に使われた店舗名を候補として
+// 出せるように、既存レコードから一覧をユニークに集めて返す。
+async function getRequestStoreNames(source) {
+  if (!REQUEST_SOURCES.some((s) => s.key === source)) throw new Error(`不正な依頼元です: ${source}`);
+  const records = await getAllRecords(source);
+  const names = new Set();
+  for (const r of records) {
+    const name = r["店舗名"]?.value;
+    if (name) names.add(name);
+  }
+  return [...names].sort();
+}
+
+// 提携店からの新規依頼を、この在庫アプリから直接作成する。修理王は担当者がパーツを検索して
+// 手入力、ミニットはExcelの発注データをそのまま貼り付けて作る想定(app.js側で列を解析)。
+// 発注表テーブルは見た目上「パーツ番号・パーツ名・バーコード番号・単位・卸値」等がどれも
+// 普通のテキスト/数値フィールドに見える(fields.jsonのtypeもSINGLE_LINE_TEXT/NUMBERで、
+// lookupプロパティもnull)が、実機検証の結果、実際には裏で「隠れたルックアップキー」に
+// よって他の項目がまとめてクリアされる挙動があることが判明した。具体的には:
+//  - 修理王(IRAI): パーツ_検索フィールドがキー(値は常にパーツ名と同じ)。これが空だと、
+//    パーツ番号・パーツ名・バーコード番号・単位・卸値まで含めて全部空で保存される。
+//  - ミニット(IRAI_MINUTE): ミニット商品コードフィールドがキー。不正な値を入れるとGAIA_LO04
+//    エラーになり、逆に空のまま送るとパーツ番号まで含めて全部空で保存される。
+// そのため、キー相当の項目には必ずパーツマスタ側の実在する値(パーツ名・ミニット商品コード)を
+// 補って送る。パーツマスタに無い新パーツ(キーが用意できない)は、この発注表テーブルには
+// 書き込まず、ルックアップを持たない「不足分」用テーブルに書き込むことで安全に登録する
+// (不足分の自動作成:createShortageRequestと同じ考え方)。
+// レコード直下の「店舗名」も同様に隠れたキー(店舗名_検索)を持ち、実在しない文字列を
+// 入れるとレコード作成自体がGAIA_LO04で失敗するため、店舗名はgetRequestStoreNamesの
+// 候補一覧から選んだ値を渡す前提で、店舗名_検索フィールドに書き込む。
+// 卸値はitem側の値(ミニットのExcelにある「単価」など、その依頼時点の金額)を優先し、
+// 未指定であればパーツマスタの現在の卸値を使う。
+async function createRequest({ source, date, storeName, items }) {
+  const sourceConfig = REQUEST_SOURCES.find((s) => s.key === source);
+  if (!sourceConfig) throw new Error(`不正な依頼元です: ${source}`);
+  const validItems = (items || []).filter((item) => item.partNo && Number(item.qty) > 0);
+  if (validItems.length === 0) throw new Error("明細が1件もありません");
+
+  const partsMap = await lookupPartsByPartNos(validItems.map((item) => item.partNo));
+
+  // 隠れたルックアップキーとして使える値がパーツマスタ側に存在するかどうかで、書き込み先
+  // テーブルを振り分ける。修理王(IRAI)はパーツ_検索(値はパーツ名)がキーだが、実機検証の結果、
+  // 参照先(パーツマスタのパーツ名フィールド)に重複禁止設定が掛かっていないため、そもそも
+  // ルックアップとして機能せず必ずGAIA_LO03エラーになることが判明した。そのためIRAIは常に
+  // 不足分明細テーブル側に書き込む(ミニットはミニット商品コードのルックアップが正常に機能する)。
+  const hasUsableKey = (master) => {
+    if (source !== "IRAI_MINUTE") return false;
+    return !!master?.minuteCode;
+  };
+  const matchedItems = validItems.filter((item) => hasUsableKey(partsMap[item.partNo]));
+  const unmatchedItems = validItems.filter((item) => !hasUsableKey(partsMap[item.partNo]));
+
+  const rows = matchedItems.map((item) => {
+    const master = partsMap[item.partNo];
+    const rowValue = {
+      パーツ番号: { value: item.partNo },
+      パーツ名: { value: master.partName || "" },
+      バーコード番号: { value: master.barcode || "" },
+      単位: { value: master.unit || "" },
+      卸値: {
+        value: item.price !== undefined && item.price !== null && item.price !== "" ? Number(item.price) : master.price || 0,
+      },
+      購入数: { value: Number(item.qty) },
+    };
+    // source === "IRAI_MINUTE" のときしかここに来ない(修理王は常にunmatchedItems側で処理する)。
+    rowValue["ミニット商品コード"] = { value: master.minuteCode };
+    rowValue["パーツ名_ミニット名称"] = { value: item.minuteName || "" };
+    return { value: rowValue };
+  });
+
+  const record = {
+    日付: { value: date },
+  };
+  // 店舗名_検索が未登録の値だとレコード作成自体が失敗するため、空欄のときだけは書き込まない
+  // (店舗名未入力のまま作成できるようにする)。
+  if (storeName) record["店舗名_検索"] = { value: storeName };
+  if (rows.length > 0) record["発注表"] = { value: rows };
+  // パーツマスタに無い(隠れたキーが用意できない)分は、ルックアップを一切持たない
+  // 「不足分」テーブルに書き込む。createShortageRequestと同じ、実機検証済みの安全な書き込み先。
+  if (unmatchedItems.length > 0) {
+    record[sourceConfig.shortageTable] = {
+      value: unmatchedItems.map((item) => {
+        // unmatched=隠れたキーが使えない、であってパーツマスタに無いとは限らない
+        // (ミニットはパーツ自体はマスタにあってもミニット商品コード未設定なら unmatched になる)ため、
+        // マスタ情報があれば優先的に使う。
+        const master = partsMap[item.partNo] || {};
+        const rowValue = {
+          [SHORTAGE_TABLE_FIELDS.partNo]: { value: item.partNo },
+          [SHORTAGE_TABLE_FIELDS.partName]: { value: master.partName || item.partName || item.minuteName || "" },
+          [SHORTAGE_TABLE_FIELDS.barcode]: { value: master.barcode || item.barcode || "" },
+          [SHORTAGE_TABLE_FIELDS.unit]: { value: master.unit || item.unit || "" },
+          [SHORTAGE_TABLE_FIELDS.qty]: { value: Number(item.qty) },
+          [SHORTAGE_TABLE_FIELDS.price]: {
+            value: item.price !== undefined && item.price !== null && item.price !== "" ? Number(item.price) : master.price || 0,
+          },
+        };
+        if (source === "IRAI_MINUTE" && item.minuteName) {
+          rowValue["パーツ名_ミニット名称_0"] = { value: item.minuteName };
+        }
+        return { value: rowValue };
+      }),
+    };
+  }
+  // 発送準備は必須の選択項目で、「準備中」でないとこの機能の依頼一覧(getRequests)に出てこない。
+  if (source === "IRAI") {
+    record["発送準備_0"] = { value: "準備中" };
+    // IRAI側だけ存在する必須のチェックボックス。この画面からの新規作成では判断材料が無いため、
+    // 安全側(共有しない)を既定値にしておく。
+    record["スーツケースの救急車へ共有"] = { value: ["共有しない"] };
+  } else {
+    record["発送準備"] = { value: "準備中" };
+  }
+
+  const headers = { ...requestAuthHeaders(source), "Content-Type": "application/json; charset=utf-8" };
+  const res = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ app: Number(APP_ID[source]), record }),
+  });
+  if (!res.ok) throw new Error(`依頼の作成エラー: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  return { id: json.id, rowCount: rows.length, unmatchedPartNos: unmatchedItems.map((item) => item.partNo) };
+}
+
 // 新規レコード作成時にそのままコピーしてよいフィールド型(逆に、レコード番号や集計項目・添付ファイルなど
 // システム側で自動設定される/コピーすべきでない型は除外する)。
 const COPYABLE_FIELD_TYPES = new Set([
@@ -772,6 +921,9 @@ module.exports = {
   fetchRequestDocument,
   fulfillRequest,
   deleteRequest,
+  lookupPartsByPartNos,
+  getRequestStoreNames,
+  createRequest,
   getRegistrationHistory,
   deleteRegistrationRecord,
   deleteRegistrationRow,

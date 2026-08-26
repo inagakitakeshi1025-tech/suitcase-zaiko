@@ -187,6 +187,40 @@ app.post("/api/requests/delete", async (req, res) => {
   }
 });
 
+// 依頼表の「店舗名」は実在する値でないとレコード作成自体が失敗する隠れたキーのため、
+// 新規依頼作成画面では過去の依頼で使われた店舗名を候補として出す。
+app.get("/api/requests/store-names", async (req, res) => {
+  try {
+    const source = req.query.source === "IRAI_MINUTE" ? "IRAI_MINUTE" : "IRAI";
+    res.json(await kintone.getRequestStoreNames(source));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/requests/create", async (req, res) => {
+  try {
+    const result = await kintone.createRequest(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ミニットのExcel貼り付けや修理王の手入力で分かっている「パーツ番号」から、
+// パーツマスタのバーコード・パーツ名等を突き合わせプレビューするための検索。
+app.post("/api/parts/lookup", async (req, res) => {
+  try {
+    const { partNos } = req.body;
+    res.json(await kintone.lookupPartsByPartNos(partNos || []));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/history", async (req, res) => {
   try {
     const appKey = req.query.appKey === "NYUKO" ? "NYUKO" : "SHUKKO";

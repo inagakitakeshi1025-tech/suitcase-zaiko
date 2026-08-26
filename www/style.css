@@ -851,3 +851,50 @@ select.store-select,
   background: var(--accent);
   color: #fff;
 }
+
+/* ===== 新規依頼の作成モーダル ===== */
+.request-create-inner {
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 20px;
+  width: min(92vw, 560px);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.request-create-inner h3 {
+  font-size: 14px;
+  color: var(--accent-dark);
+  margin: 18px 0 8px 0;
+}
+
+.modal-close-btn {
+  padding: 6px 12px;
+  background: var(--tag-bg);
+  color: var(--text);
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+#request-create-open-btn {
+  padding: 9px 16px;
+  background: var(--accent-dark);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+}
+#request-create-open-btn:hover { background: #094d49; }
+
+#rc-paste-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 10px;
+}
