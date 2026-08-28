@@ -447,6 +447,8 @@ document.getElementById("reg-nyuko-submit-btn").addEventListener("click", async 
 // ===== 提携店からの依頼(パーツ購入依頼)処理 =====
 let requestsCache = [];
 let requestsLoaded = false;
+// 分納まとめ機能: 発送済み一覧(ミニットのみ)でチェックした依頼のrecordIdを保持する
+let selectedMergeIds = new Set();
 
 function switchTab(tab) {
   document.getElementById("list-col").style.display = tab === "inventory" ? "" : "none";
@@ -482,6 +484,9 @@ async function loadRequests() {
     status === "completed"
       ? "この画面から出庫登録が完了した依頼を、新しい順に表示しています(間違いが無かったかの見直し用)。"
       : "発送準備が「準備中」かつ、まだ在庫アプリで出庫登録していない依頼だけを表示しています。";
+  selectedMergeIds.clear();
+  document.getElementById("merge-invoice-bar").style.display = status === "completed" ? "" : "none";
+  updateMergeInvoiceBar();
   statusEl.textContent = "読み込み中...";
   try {
     const res = await fetch("/api/requests?status=" + encodeURIComponent(status));
@@ -505,6 +510,35 @@ async function loadRequests() {
 }
 document.getElementById("requests-reload-btn").addEventListener("click", loadRequests);
 document.getElementById("requests-status-select").addEventListener("change", loadRequests);
+
+function updateMergeInvoiceBar() {
+  const count = selectedMergeIds.size;
+  document.getElementById("merge-invoice-count").textContent = `${count}件選択中`;
+  document.getElementById("merge-invoice-btn").disabled = count < 2;
+}
+
+document.getElementById("merge-invoice-btn").addEventListener("click", async () => {
+  const ids = [...selectedMergeIds];
+  if (ids.length < 2) return;
+  if (!confirm(`選択した${ids.length}件をまとめて1枚の請求書にします。よろしいですか？\n(個別の請求書はそのまま残ります)`)) return;
+  const btn = document.getElementById("merge-invoice-btn");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/requests/merge-invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordIds: ids }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "まとめ請求書の作成に失敗しました");
+    alert(`まとめ請求書を作成しました(明細${json.itemCount}件)。\n出庫登録日が最も新しい依頼の「請求書」欄に添付しています。`);
+    selectedMergeIds.clear();
+    loadRequests();
+  } catch (e) {
+    alert("エラー: " + e.message);
+    updateMergeInvoiceBar();
+  }
+});
 
 // バーコードから在庫アプリ側の在庫数(店舗別)を引く。見つからなければ0扱い。
 function lookupStock(barcode, store) {
@@ -541,8 +575,11 @@ function renderRequests(status) {
     const card = document.createElement("div");
     card.className = "request-card";
     const totalCount = request.items.length + request.otherItems.length;
+    // 分納まとめ機能: 発送済み一覧のミニットの依頼だけ、まとめる対象としてチェックできる
+    const canMerge = status === "completed" && request.source === "IRAI_MINUTE";
     card.innerHTML = `
       <div class="request-card-header">
+        ${canMerge ? `<input type="checkbox" class="request-merge-check" data-record-id="${request.recordId}">` : ""}
         <span class="tag tag-category">${request.sourceLabel}</span>
         <span class="request-date">${request.date}</span>
         <span class="request-store-name">${request.storeName ?? ""}</span>
@@ -553,6 +590,14 @@ function renderRequests(status) {
       </div>
       <div class="request-detail" style="display:none;"></div>
     `;
+    const mergeCheck = card.querySelector(".request-merge-check");
+    if (mergeCheck) {
+      mergeCheck.addEventListener("change", () => {
+        if (mergeCheck.checked) selectedMergeIds.add(request.recordId);
+        else selectedMergeIds.delete(request.recordId);
+        updateMergeInvoiceBar();
+      });
+    }
     const toggleBtn = card.querySelector(".request-toggle-btn");
     const detailEl = card.querySelector(".request-detail");
     toggleBtn.addEventListener("click", () => {

@@ -176,6 +176,17 @@ app.post("/api/requests/fulfill", async (req, res) => {
   }
 });
 
+app.post("/api/requests/merge-invoice", async (req, res) => {
+  try {
+    const { recordIds } = req.body;
+    const result = await kintone.mergeInvoices(recordIds);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/requests/delete", async (req, res) => {
   try {
     const { source, recordId } = req.body;

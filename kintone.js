@@ -48,6 +48,9 @@ const REQUEST_SOURCES = [
       { type: "delivery", field: "納品書", label: "納品書" },
       { type: "invoice", field: "請求書", label: "請求書" },
     ],
+    // 分納まとめ機能用: 出庫登録のたびに「実際に出庫した明細」をJSON文字列で保存しておくフィールド
+    // (システム内部用。画面には出さない)。これが無い古い依頼(この機能を追加する前の分)はまとめられない。
+    actualItemsField: "出庫実績JSON",
   },
 ];
 
@@ -878,6 +881,10 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
       record[field] = { value: [{ fileKey }] };
       documents.push({ label, filename, base64: buffer.toString("base64") });
     }
+    // 分納まとめ機能用に、今回実際に出庫した明細をそのまま保存しておく
+    if (sourceConfig.actualItemsField) {
+      record[sourceConfig.actualItemsField] = { value: JSON.stringify({ items: docItems, otherItems: docOtherItems }) };
+    }
   }
 
   const headers = { ...requestAuthHeaders(source), "Content-Type": "application/json; charset=utf-8" };
@@ -889,6 +896,72 @@ async function fulfillRequest({ source, recordId, date, shipments, shortageItems
   if (!updateRes.ok) throw new Error(`依頼表の更新エラー: ${updateRes.status} ${await updateRes.text()}`);
 
   return { shukkoResults, shortageResult, documents };
+}
+
+// 分納で複数回に分かれたミニット向け依頼(出庫登録済み・recordIds)の実出庫明細をまとめて
+// 1枚の請求書PDFを作り、選択の中で最も新しい出庫登録日のレコードの「請求書」欄に上書き添付する。
+// 各レコードに既にある個別の請求書PDF(納品書も)はそのまま残す。
+async function mergeInvoices(recordIds) {
+  const sourceConfig = REQUEST_SOURCES.find((s) => s.key === "IRAI_MINUTE");
+  const ids = [...new Set((recordIds || []).map(Number))].filter(Boolean);
+  if (ids.length < 2) throw new Error("まとめる依頼を2件以上選択してください");
+
+  const records = [];
+  for (const id of ids) {
+    const res = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json?app=${APP_ID.IRAI_MINUTE}&id=${id}`, {
+      headers: authHeaders("IRAI_MINUTE"),
+    });
+    if (!res.ok) throw new Error(`依頼レコード取得エラー(ID:${id}): ${res.status} ${await res.text()}`);
+    const json = await res.json();
+    records.push({ id, record: json.record });
+  }
+
+  const missing = records.filter((r) => !r.record[sourceConfig.actualItemsField]?.value);
+  if (missing.length > 0) {
+    throw new Error(
+      `以下の依頼には出庫実績の記録が無いため、まとめられません(この機能を追加する前に出庫登録されたものです): ID ${missing
+        .map((r) => r.id)
+        .join(", ")}`
+    );
+  }
+
+  const allItems = [];
+  const allOtherItems = [];
+  for (const { record } of records) {
+    const parsed = JSON.parse(record[sourceConfig.actualItemsField].value);
+    allItems.push(...(parsed.items || []));
+    allOtherItems.push(...(parsed.otherItems || []));
+  }
+  if (allItems.length === 0 && allOtherItems.length === 0) throw new Error("まとめる明細がありません");
+
+  // 出庫登録日が最も新しいレコードを代表(添付先)にする
+  records.sort((a, b) => (b.record["出庫登録日"]?.value || "").localeCompare(a.record["出庫登録日"]?.value || ""));
+  const target = records[0];
+
+  const date = new Date().toISOString().slice(0, 10);
+  const buffer = await buildInvoicePdf({ date, items: allItems, otherItems: allOtherItems });
+  const timestamp = new Date().toISOString().replace("T", "_").replace(/:/g, "-").slice(0, 19);
+  const filename = `report_merged_${timestamp}.pdf`;
+  const fileKey = await uploadFileToKintone("IRAI_MINUTE", buffer, filename);
+
+  const headers = { ...requestAuthHeaders("IRAI_MINUTE"), "Content-Type": "application/json; charset=utf-8" };
+  const updateRes = await fetch(`${KINTONE_BASE_URL}/k/v1/record.json`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      app: Number(APP_ID.IRAI_MINUTE),
+      id: Number(target.id),
+      record: { 請求書: { value: [{ fileKey }] } },
+    }),
+  });
+  if (!updateRes.ok) throw new Error(`まとめ請求書の添付エラー: ${updateRes.status} ${await updateRes.text()}`);
+
+  return {
+    targetRecordId: target.id,
+    itemCount: allItems.length + allOtherItems.length,
+    filename,
+    base64: buffer.toString("base64"),
+  };
 }
 
 // 入力ミスの依頼を削除する。出庫表・PDFと連動してしまうと整合性が崩れるため、
@@ -934,6 +1007,7 @@ module.exports = {
   getRequests,
   fetchRequestDocument,
   fulfillRequest,
+  mergeInvoices,
   deleteRequest,
   lookupPartsByPartNos,
   getRequestStoreNames,

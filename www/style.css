@@ -729,6 +729,36 @@ select.store-select,
   flex-wrap: wrap;
 }
 
+.request-merge-check {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.merge-invoice-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.merge-invoice-bar button {
+  padding: 6px 14px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.merge-invoice-bar button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 .request-date, .request-store-name, .request-count {
   font-size: 13px;
   color: var(--muted);
