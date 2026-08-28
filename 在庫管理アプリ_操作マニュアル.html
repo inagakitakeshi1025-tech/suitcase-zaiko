@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>操作マニュアル - 在庫管理アプリ</title>
+<style>
+  * { box-sizing: border-box; }
+  @page { size: A4 landscape; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: #222;
+    margin: 0;
+    background: #fff;
+  }
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 50px 60px;
+    page-break-after: always;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  .page-flex { display: flex; gap: 44px; align-items: flex-start; }
+  .col-text { flex: 1.15; min-width: 0; }
+  .col-image { flex: 1; min-width: 0; padding-top: 6px; }
+  .screenshot {
+    max-width: 100%;
+    display: block;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+  .screenshot-caption { font-size: 11.5px; color: #999; margin-top: 8px; text-align: center; }
+
+  /* 表紙 */
+  .cover { text-align: center; padding-top: 180px; }
+  .cover .badge {
+    display: inline-block;
+    background: #06c755;
+    color: white;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 8px 20px;
+    border-radius: 20px;
+    margin-bottom: 24px;
+  }
+  .cover h1 { font-size: 30px; margin: 0 0 6px; line-height: 1.4; }
+  .cover .subtitle { color: #666; font-size: 15px; margin-bottom: 60px; }
+  .cover .meta { color: #999; font-size: 13px; margin-top: 4px; }
+
+  h2 {
+    font-size: 19px;
+    border-left: 5px solid #06c755;
+    padding-left: 12px;
+    margin: 0 0 20px;
+  }
+  h3 { font-size: 15px; color: #06c755; margin: 28px 0 10px; page-break-after: avoid; }
+
+  p { line-height: 1.7; }
+  ul { line-height: 1.9; }
+  ul.plain { page-break-inside: avoid; }
+  .box { page-break-inside: avoid; }
+  table { page-break-inside: avoid; }
+
+  .box {
+    border: 1px solid #cdeedd;
+    background: #f3fbf6;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 13.5px;
+  }
+  .box.warn {
+    border-color: #f0d99a;
+    background: #fdf6e3;
+  }
+  .box .box-title { font-weight: bold; margin-bottom: 6px; }
+  .box.warn .box-title { color: #8a5a00; }
+
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .steps li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    line-height: 1.6;
+  }
+  .steps li .num {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #06c755;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  th, td { border: 1px solid #e0e0e0; padding: 8px 12px; text-align: left; }
+  th { background: #f4f5f7; width: 160px; }
+
+  ul.plain { list-style: disc; padding-left: 22px; }
+  ul.plain li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<div class="page cover">
+  <span class="badge">操作マニュアル</span>
+  <h1>在庫管理アプリ</h1>
+  <p class="subtitle">在庫管理・提携店からの依頼処理　スタッフ向け 操作ガイド</p>
+  <p class="meta">作成日: 2026年8月26日</p>
+</div>
+
+<div class="page">
+  <h2>1. このアプリでできること</h2>
+  <p>「在庫管理アプリ」は、スーツケース救急車・豊田倉庫のパーツ在庫を確認しながら出庫・入庫を記録し、あわせて提携店(スーツケース修理王・ミニット)からのパーツ購入依頼を処理して納品書・請求書を発行するためのツールです。</p>
+  <ul class="plain">
+    <li>パーツ番号・パーツ名・バーコードで在庫を検索し、店舗ごとの在庫数と適正在庫割れをひと目で確認できる</li>
+    <li>パーツを使った(出庫)・パーツが届いた(入庫)ときに、まとめて記録できる</li>
+    <li>棚卸で実際に数えた数量を入力すると、理論在庫との差分を自動で在庫に反映できる</li>
+    <li>提携店からの依頼を確認しながら出庫登録すると、納品書(ミニットの場合は請求書も)のPDFが自動で作成される</li>
+    <li>依頼が足りない数量しか出庫できなかった場合、不足分は自動的に新しい依頼として登録される</li>
+    <li>修理王は手動検索、ミニットはExcelデータの貼り付けで、新しい依頼をこのアプリ上から作成できる</li>
+  </ul>
+  <div class="box warn">
+    <div class="box-title">重要</div>
+    出庫・入庫の登録や依頼の削除は、在庫アプリと連携しているキントーンのデータを直接書き換えます。いずれの操作も<b>元に戻せません</b>ので、内容をよく確認してから実行してください。
+  </div>
+</div>
+
+<div class="page">
+  <h2>2. ログイン</h2>
+  <div class="page-flex">
+    <div class="col-text">
+      <ol class="steps">
+        <li><span class="num">1</span><span>配布されたURLをブラウザで開く</span></li>
+        <li><span class="num">2</span><span>ユーザ名とパスワードを入力し、「サインイン」を押す(ユーザ名・パスワードは担当者に確認してください)</span></li>
+      </ol>
+      <div class="box">
+        一度ログインすると30日間はログインし直す必要はありません。画面右上の「ログアウト」から手動でログアウトできます。
+      </div>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/login.png" alt="ログイン画面">
+      <p class="screenshot-caption">ログイン画面</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>3. 在庫一覧の使い方</h2>
+  <p>ログイン後、最初に表示される画面です。画面上部の「在庫一覧」「提携店からの依頼」の2つのタブで表示を切り替えます。</p>
+  <div class="page-flex">
+    <div class="col-text">
+      <h3>検索・絞り込み</h3>
+      <ul class="plain">
+        <li><b>カテゴリ</b>：ドロップダウンから絞り込み</li>
+        <li><b>キーワード検索</b>：パーツ番号・パーツ名・バーコードのいずれかに部分一致するもので絞り込み</li>
+        <li><b>バーコード読取</b>：カメラでバーコードを読み取り、自動でキーワード欄に入力(スマホ・PCともにhttps接続が必要です)</li>
+        <li><b>在庫状況</b>：「適正在庫以下のみ表示」「スーツケース救急車のみ閾値割れ」「豊田倉庫のみ閾値割れ」で絞り込み</li>
+        <li><b>アラート閾値(救急車・未設定分)</b>：パーツごとに個別の適正在庫数が設定されていない場合に使う、救急車側の共通閾値。豊田倉庫は個別設定が無いパーツは常にアラート対象外です</li>
+      </ul>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/toolbar.png" alt="検索・絞り込み欄">
+      <p class="screenshot-caption">在庫一覧の検索・絞り込み欄</p>
+    </div>
+  </div>
+
+  <h3>パーツカードの見方</h3>
+  <div class="page-flex">
+    <div class="col-text">
+      <ul class="plain">
+        <li>画像はクリックすると拡大表示されます</li>
+        <li>「合計在庫」は救急車・豊田倉庫の在庫数の合計です</li>
+        <li>店舗ごとの在庫数の右にある鉛筆マークのボタンから、実際に数えた在庫数(実数)を入力できます。理論在庫との差分が自動的に入庫または出庫の調整として登録されます(棚卸で使用)</li>
+        <li>「＋ 出庫/入庫の明細に追加」で、そのパーツを出庫・入庫登録の明細に追加します</li>
+      </ul>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/card.png" alt="パーツカードの例">
+      <p class="screenshot-caption">パーツカード1件分の表示例</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>4. 出庫・入庫登録</h2>
+  <p>パーツを明細に追加すると、PCでは画面右側、スマホでは画面下部の「出庫・入庫を開く」ボタンから登録フォームが開きます。</p>
+  <div class="page-flex">
+    <div class="col-text">
+      <h3>新規登録</h3>
+      <ol class="steps">
+        <li><span class="num">1</span><span>日付・店舗(出庫元または入庫先)を選ぶ。担当者欄は入庫登録の時だけ使用する</span></li>
+        <li><span class="num">2</span><span>左の在庫一覧から目的のパーツを検索し、「＋ 出庫/入庫の明細に追加」で明細に追加する</span></li>
+        <li><span class="num">3</span><span>明細を1件以上追加した状態で「まとめて出庫登録する」または「まとめて入庫登録する」を押す</span></li>
+      </ol>
+      <div class="box">
+        同じ日付・同じ店舗の登録が既にある場合は、新しいレコードではなく既存の登録に追記されます。
+      </div>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" style="max-width:330px; margin:0 auto;" src="manual-images/regform.png" alt="出庫・入庫登録フォーム">
+      <p class="screenshot-caption">出庫・入庫登録フォーム(明細を追加した状態)</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>4-2. 登録履歴・削除</h2>
+  <div class="page-flex">
+    <div class="col-text">
+      <p>直近30日分の出庫表・入庫表の登録を新しい順に表示します。</p>
+      <ul class="plain">
+        <li>明細1件だけを間違えた場合は、その明細の「削除」ボタンで削除できます</li>
+        <li>その日の登録をまるごと取り消したい場合は「この登録をまとめて削除」を使います</li>
+      </ul>
+      <div class="box warn">
+        <div class="box-title">注意</div>
+        どちらも元に戻せないため、削除前に内容をよく確認してください。
+      </div>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/reghistory.png" alt="登録履歴・削除">
+      <p class="screenshot-caption">登録履歴・削除の画面</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>5. 提携店からの依頼</h2>
+  <div class="page-flex">
+    <div class="col-text">
+      <h3>依頼一覧の見方</h3>
+      <p>「準備中(未処理)」と「発送済み(処理済み・見直し用)」をドロップダウンで切り替えます。準備中は、発送準備が「準備中」かつ、まだこのアプリで出庫登録していない依頼だけが表示されます。</p>
+      <table>
+        <tr><th>詳細を開く</th><td>その依頼の明細を表示する</td></tr>
+        <tr><th>削除</th><td>準備中の依頼を削除する(元に戻せません。確認ダイアログが出ます)</td></tr>
+      </table>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/requests.png" alt="依頼一覧(準備中)">
+      <p class="screenshot-caption">依頼一覧(準備中)の表示例</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>5-2. 依頼を処理する(準備中の依頼)</h2>
+  <div class="page-flex">
+    <div class="col-text">
+      <ul class="plain">
+        <li>明細ごとに出庫元(スーツケース救急車／豊田倉庫／出庫しない)と出庫数を選びます。在庫がある店舗が自動で候補として選択されています</li>
+        <li>両店舗とも依頼数に足りていない明細には「両店とも不足」という警告が表示されます</li>
+        <li>依頼数より少ない数量だけ出庫すると、差分は自動的に「不足分」として新しい依頼レコードが作られます(店舗名などは元の依頼を引き継ぎます)</li>
+        <li>「その他」の明細(パーツマスタに登録の無い特注品)は、わかる範囲でパーツ番号を手入力できます。不足分の自動作成はされないため、全量出庫できない場合は別途手動で対応してください</li>
+      </ul>
+      <div class="box">
+        「この内容で出庫登録する」を押すと在庫数が減り、納品書(ミニットの場合は請求書も)のPDFが自動生成されます。「開く(印刷・保存)」または「PCにダウンロード」から確認できます。
+      </div>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/requestdetail.png" alt="依頼明細の処理画面">
+      <p class="screenshot-caption">明細ごとの出庫元・出庫数の選択(ピンク色は「両店とも不足」の例)</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>5-3〜5-4. 発送済みの見直し・依頼の削除</h2>
+  <h3>発送済み(処理済み)の見直し</h3>
+  <p>出庫登録済みの依頼を読み取り専用で確認できます。明細と、その時に発行した納品書・請求書のPDFを開き直せます。実際の出庫数や不足分の扱いは添付PDFを確認してください(表示されている依頼数は元の依頼数です)。</p>
+  <h3>依頼の削除</h3>
+  <p>準備中の依頼だけ「削除」ボタンがあります。確認ダイアログが出るので、内容を確認の上で削除してください(元に戻せません)。</p>
+</div>
+
+<div class="page">
+  <h2>5-5. 新規依頼を作成</h2>
+  <p>「＋ 新規依頼を作成」ボタンから、依頼元(修理王／ミニット)を選んで作成します。日付と店舗名を入力し(店舗名は入力欄をクリックすると出る候補から選んでください)、「この内容で依頼を作成する」で登録します。</p>
+  <div class="page-flex">
+    <div class="col-text">
+      <h3>スーツケース修理王：手動で入力</h3>
+      <p>パーツ検索欄からパーツを探し、「＋ 明細に追加」で手動で明細を追加します(数量の変更・削除も可能)。</p>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/createmodal-irai.png" alt="新規依頼作成(修理王)">
+      <p class="screenshot-caption">新規依頼を作成(スーツケース修理王：手動入力)</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>5-5. 新規依頼を作成(ミニットの場合)</h2>
+  <div class="page-flex">
+    <div class="col-text">
+      <h3>ミニット：Excelを貼り付け</h3>
+      <p>発注のExcelデータ(商品コード・商品名・貴社品番・単価・発注数の列を含む範囲)をそのままコピーし、貼り付け欄にペーストして「貼り付けた内容を解析する」を押します。見出し行が含まれていても自動で無視されます。</p>
+      <div class="box warn">
+        <div class="box-title">注意</div>
+        解析結果でパーツマスタに見つからなかった明細は、バーコード等が空欄で登録されます。入力ミスがないか確認してください。店舗名は既存の依頼で使われている表記と完全に一致していないと作成に失敗するため、必ず候補一覧から選んでください。
+      </div>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" style="max-width:420px; margin:0 auto;" src="manual-images/createmodal-minute.png" alt="新規依頼作成(ミニット)">
+      <p class="screenshot-caption">新規依頼を作成(ミニット：Excel貼り付け)</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>6. 必ず守ること</h2>
+  <ul class="plain">
+    <li>出庫・入庫登録、依頼の削除、登録履歴の削除は、いずれも元に戻せません。確認ダイアログの内容をよく確認してから実行する</li>
+    <li>新規依頼作成の店舗名は、既存の表記と完全一致でなければ作成できない</li>
+    <li>ミニット向けの納品書・請求書には、ミニットの商品コードとミニット向けの名称が表示される(自社のパーツ番号は名称の中に括弧書きで含まれる)</li>
+    <li>ミニットの納品書・請求書の宛先は、依頼データの店舗名に関わらず、常に固定の取引先名になる</li>
+    <li>操作に迷ったとき・画面がおかしいときは、自己判断で何度も操作を繰り返さず担当者に確認する</li>
+  </ul>
+</div>
+
+</body>
+</html>
