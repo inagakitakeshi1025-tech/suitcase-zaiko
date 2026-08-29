@@ -172,21 +172,19 @@
       <p class="screenshot-caption">在庫一覧の検索・絞り込み欄</p>
     </div>
   </div>
+</div>
 
-  <h3>パーツカードの見方</h3>
-  <div class="page-flex">
-    <div class="col-text">
-      <ul class="plain">
-        <li>画像はクリックすると拡大表示されます</li>
-        <li>「合計在庫」は救急車・豊田倉庫の在庫数の合計です</li>
-        <li>店舗ごとの在庫数の右にある鉛筆マークのボタンから、実際に数えた在庫数(実数)を入力できます。理論在庫との差分が自動的に入庫または出庫の調整として登録されます(棚卸で使用)</li>
-        <li>「＋ 出庫/入庫の明細に追加」で、そのパーツを出庫・入庫登録の明細に追加します</li>
-      </ul>
-    </div>
-    <div class="col-image">
-      <img class="screenshot" src="manual-images/card.png" alt="パーツカードの例">
-      <p class="screenshot-caption">パーツカード1件分の表示例</p>
-    </div>
+<div class="page">
+  <h2>3-2. パーツカードの見方</h2>
+  <ul class="plain">
+    <li>画像はクリックすると拡大表示されます</li>
+    <li>「合計在庫」は救急車・豊田倉庫の在庫数の合計です</li>
+    <li>店舗ごとの在庫数の右にある鉛筆マークのボタンから、実際に数えた在庫数(実数)を入力できます。理論在庫との差分が自動的に入庫または出庫の調整として登録されます(棚卸で使用)</li>
+    <li>「＋ 出庫/入庫の明細に追加」で、そのパーツを出庫・入庫登録の明細に追加します</li>
+  </ul>
+  <div style="text-align:center; margin-top:36px;">
+    <img class="screenshot" src="manual-images/card.png" style="max-width:640px;" alt="パーツカードの例">
+    <p class="screenshot-caption">パーツカード1件分の表示例</p>
   </div>
 </div>
 
@@ -214,22 +212,18 @@
 
 <div class="page">
   <h2>4-2. 登録履歴・削除</h2>
-  <div class="page-flex">
-    <div class="col-text">
-      <p>直近30日分の出庫表・入庫表の登録を新しい順に表示します。</p>
-      <ul class="plain">
-        <li>明細1件だけを間違えた場合は、その明細の「削除」ボタンで削除できます</li>
-        <li>その日の登録をまるごと取り消したい場合は「この登録をまとめて削除」を使います</li>
-      </ul>
-      <div class="box warn">
-        <div class="box-title">注意</div>
-        どちらも元に戻せないため、削除前に内容をよく確認してください。
-      </div>
-    </div>
-    <div class="col-image">
-      <img class="screenshot" src="manual-images/reghistory.png" alt="登録履歴・削除">
-      <p class="screenshot-caption">登録履歴・削除の画面</p>
-    </div>
+  <p>直近30日分の出庫表・入庫表の登録を新しい順に表示します。</p>
+  <ul class="plain">
+    <li>明細1件だけを間違えた場合は、その明細の「削除」ボタンで削除できます</li>
+    <li>その日の登録をまるごと取り消したい場合は「この登録をまとめて削除」を使います</li>
+  </ul>
+  <div class="box warn">
+    <div class="box-title">注意</div>
+    どちらも元に戻せないため、削除前に内容をよく確認してください。
+  </div>
+  <div style="text-align:center; margin-top:20px;">
+    <img class="screenshot" src="manual-images/reghistory.png" style="max-width:400px;" alt="登録履歴・削除">
+    <p class="screenshot-caption">登録履歴・削除の画面</p>
   </div>
 </div>
 
@@ -274,10 +268,43 @@
 
 <div class="page">
   <h2>5-3〜5-4. 発送済みの見直し・依頼の削除</h2>
-  <h3>発送済み(処理済み)の見直し</h3>
-  <p>出庫登録済みの依頼を読み取り専用で確認できます。明細と、その時に発行した納品書・請求書のPDFを開き直せます。実際の出庫数や不足分の扱いは添付PDFを確認してください(表示されている依頼数は元の依頼数です)。</p>
-  <h3>依頼の削除</h3>
-  <p>準備中の依頼だけ「削除」ボタンがあります。確認ダイアログが出るので、内容を確認の上で削除してください(元に戻せません)。</p>
+  <div class="page-flex">
+    <div class="col-text">
+      <h3>発送済み(処理済み)の見直し</h3>
+      <p>出庫登録済みの依頼を読み取り専用で確認できます。明細と、その時に発行した納品書・請求書のPDFを開き直せます。実際の出庫数や不足分の扱いは添付PDFを確認してください(表示されている依頼数は元の依頼数です)。</p>
+      <h3>依頼の削除</h3>
+      <p>準備中の依頼だけ「削除」ボタンがあります。確認ダイアログが出るので、内容を確認の上で削除してください(元に戻せません)。</p>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/completed-list.png" alt="発送済み(処理済み)一覧の表示例">
+      <p class="screenshot-caption">発送済み(処理済み)一覧の表示例(1件目は詳細を開いた状態)</p>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+  <h2>5-4-2. 分納をまとめて請求書発行(ミニットのみ)</h2>
+  <div class="page-flex">
+    <div class="col-text">
+      <p>依頼数より少ない数量しか出庫できず、何回かに分けて(分納で)出庫登録した場合、そのままだと請求書のPDFも回ごとに分かれてしまいます。「発送済み(処理済み・見直し用)」一覧では、ミニットの依頼だけを選んでまとめて1枚の請求書に作り直せます。</p>
+      <ol class="steps">
+        <li><span class="num">1</span><span>「発送済み(処理済み・見直し用)」一覧で、まとめたいミニットの依頼にチェックを入れる(チェックボックスはミニットの依頼にだけ表示され、修理王の依頼には表示されません)</span></li>
+        <li><span class="num">2</span><span>2件以上チェックすると、画面上部の「選択した依頼をまとめて請求書発行」ボタンが押せるようになる</span></li>
+        <li><span class="num">3</span><span>ボタンを押すと、選択した依頼の実際の出庫明細をすべて集めた1枚の請求書PDFが作られる(税別合計・消費税・合計の金額も自動的に合算されます)</span></li>
+      </ol>
+      <div class="box">
+        まとめた請求書は、選択した依頼のうち出庫登録日が最も新しいものの「請求書」欄に上書きで添付されます。各依頼にもとからある個別の請求書・納品書PDFは削除されず、そのまま残ります。
+      </div>
+      <div class="box warn">
+        <div class="box-title">注意</div>
+        この機能を追加する前に出庫登録された古い依頼には、まとめるために必要な出庫明細の記録が無いため、選んでもエラーになりまとめられません。
+      </div>
+    </div>
+    <div class="col-image">
+      <img class="screenshot" src="manual-images/merge-invoice.png" alt="分納まとめ発行の画面">
+      <p class="screenshot-caption">発送済み一覧でミニットの依頼を2件チェックし、まとめて発行ボタンが押せる状態</p>
+    </div>
+  </div>
 </div>
 
 <div class="page">
@@ -320,6 +347,7 @@
     <li>新規依頼作成の店舗名は、既存の表記と完全一致でなければ作成できない</li>
     <li>ミニット向けの納品書・請求書には、ミニットの商品コードとミニット向けの名称が表示される(自社のパーツ番号は名称の中に括弧書きで含まれる)</li>
     <li>ミニットの納品書・請求書の宛先は、依頼データの店舗名に関わらず、常に固定の取引先名になる</li>
+    <li>分納まとめ発行は対象がミニットのみで、まとめた請求書は選択の中で最も新しい依頼に上書きで添付される(個別の請求書は残る)</li>
     <li>操作に迷ったとき・画面がおかしいときは、自己判断で何度も操作を繰り返さず担当者に確認する</li>
   </ul>
 </div>
