@@ -87,6 +87,17 @@
 
         <p class="hint">左の在庫一覧で目的のパーツを検索し、「＋ 出庫/入庫の明細に追加」から明細に追加してください。</p>
 
+        <div class="voice-box">
+          <h3>🎤 音声で明細を追加</h3>
+          <p class="hint">まずどちらの登録か選んでから開始してください。開始後は「パーツ番号、数量」の順に話すごとに明細へ追加されます(例:「エー、マイナス、イチマルイチ、1つ」)。最後に「保存」と話すと、対応する登録ボタンを画面上でお知らせします(登録自体は今まで通りボタンを押して行います)。</p>
+          <div class="voice-target-select">
+            <label><input type="radio" name="voice-target" value="shukko"> 出庫として追加</label>
+            <label><input type="radio" name="voice-target" value="nyuko"> 入庫として追加</label>
+          </div>
+          <button type="button" id="voice-input-btn" class="voice-btn">🎤 音声入力を開始</button>
+          <p id="voice-transcript" class="voice-transcript"></p>
+        </div>
+
         <h3>登録予定の明細(<span id="reg-cart-count">0</span>件)</h3>
         <div class="cart-table-wrap">
           <table class="cart-table">

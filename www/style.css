@@ -575,6 +575,56 @@ select.store-select,
 
 .remove-btn:hover { background: #d9534f; color: #fff; }
 
+/* ===== 音声入力 ===== */
+.voice-box {
+  background: var(--tag-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+
+.voice-box h3 { margin: 0 0 6px; font-size: 14px; }
+
+.voice-target-select {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.voice-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.voice-btn:hover { background: var(--accent-dark); }
+
+.voice-btn.is-listening {
+  background: #c1272d;
+  animation: voice-pulse 1.4s infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.voice-transcript {
+  margin-top: 8px;
+  font-size: 14px;
+  min-height: 1.4em;
+  color: var(--muted);
+}
+
+.voice-transcript.ok { color: #1a7f37; }
+.voice-transcript.error { color: #c1272d; }
+
 .submit-btn {
   width: 100%;
   padding: 12px;
@@ -587,6 +637,11 @@ select.store-select,
 }
 
 .submit-btn:hover { background: #094d49; }
+
+.submit-btn.is-highlight {
+  outline: 4px solid #ffb703;
+  outline-offset: 2px;
+}
 
 .submit-btn-secondary {
   margin-top: 8px;

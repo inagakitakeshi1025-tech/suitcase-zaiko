@@ -355,13 +355,13 @@ function renderCart(target) {
 
 // 在庫一覧の各カードの「＋ 出庫/入庫の明細に追加」ボタンから、検索し直すことなく直接カートに入れる。
 // 数量はひとまず1件で追加し、カート側の数量欄で必要に応じて変更する。
-function addItemToCart(item) {
+function addItemToCart(item, qty = 1) {
   cart.reg.push({
     barcode: item.barcode,
     partNo: item.partNo,
     partName: item.partName,
     unit: item.unit,
-    qty: 1
+    qty
   });
   renderCart("reg");
 
@@ -1152,6 +1152,216 @@ document.getElementById("rc-submit-btn").addEventListener("click", async () => {
     submitBtn.disabled = false;
   }
 });
+
+// ===== 音声入力(出庫・入庫の明細をハンズフリーで追加) =====
+// ブラウザ標準のWeb Speech API(Chrome/Edge系)を使用。追加ライブラリ・外部APIは不要でコストは
+// かからないが、iPhoneのSafariは対応が不安定なため、その場合は「対応していません」と表示するだけ
+// にとどめ、これまで通りバーコード読取・検索での登録を案内する。
+// マイク使用にはバーコードのカメラ読取と同様、HTTPS(またはlocalhost)接続が必要。
+const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+let voiceRecognition = null;
+let voiceListening = false;
+
+// 漢数字・和語の数え方(「ひとつ」等)にも対応する。音声認識はアラビア数字で返ってくることが
+// 多いが、和語の数え方で返ることもあるため両対応しておく。
+const KANJI_NUM = { "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10 };
+const WAGO_COUNT = { "ひとつ": 1, "ふたつ": 2, "みっつ": 3, "よっつ": 4, "いつつ": 5, "むっつ": 6, "ななつ": 7, "やっつ": 8, "ここのつ": 9, "とお": 10 };
+
+// 発話テキストから数量を抜き出す。見つからなければ、数量を言わなくても最低限登録できるよう1個とみなす。
+function extractQty(text) {
+  for (const [word, num] of Object.entries(WAGO_COUNT)) {
+    if (text.includes(word)) return { qty: num, rest: text.replace(word, "") };
+  }
+  const arabicMatch = text.match(/([0-9]+)\s*(つ|個|本|枚|台|セット|巻|袋)/);
+  if (arabicMatch) return { qty: Number(arabicMatch[1]), rest: text.replace(arabicMatch[0], "") };
+  const kanjiMatch = text.match(/([一二三四五六七八九十])\s*(つ|個|本|枚|台|セット|巻|袋)/);
+  if (kanjiMatch) return { qty: KANJI_NUM[kanjiMatch[1]], rest: text.replace(kanjiMatch[0], "") };
+  return { qty: 1, rest: text };
+}
+
+// 音声認識テキストのゆれ(全角英数字・長音符など)を、検索に使いやすい形へ正規化する。
+function normalizeVoiceText(text) {
+  return text
+    .replace(/[ー−―]/g, "-")
+    .replace(/[‐‑‒–—]/g, "-")
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+// 在庫一覧キャッシュをパーツ番号・パーツ名・バーコードで検索する(画面上の検索欄と同じ考え方だが、
+// 音声認識は英字の大文字・小文字を聞き分けられないため、大文字・小文字は区別しない)。
+function findInventoryMatches(keyword) {
+  if (!keyword) return [];
+  const upper = keyword.toUpperCase();
+  return inventoryCache.filter(item =>
+    (item.partNo ?? "").toUpperCase().includes(upper) ||
+    (item.partName ?? "").includes(keyword) ||
+    (item.barcode ?? "").toUpperCase().includes(upper)
+  );
+}
+
+// 正規化済みテキストの中に、既存のパーツ番号がどこかに含まれていないか探す。
+// 「O-199」のように番号が数字で終わるパーツは、続けて話した数量の数字とくっついて
+// 「O-1992個」のようなテキストになりがちで、先に数量を抜き出そうとすると番号の末尾の
+// 数字まで数量として食われてしまう。そのため数量を抜く前に、まず登録済みの番号のうち
+// 一番長く一致するものをテキストから探し出す(番号を確定できれば、そこを取り除いた
+// 残りだけを数量として解析できる)。
+function findPartNoInText(text) {
+  const upperText = text.toUpperCase();
+  const candidates = inventoryCache
+    .filter(item => item.partNo && upperText.includes(item.partNo.toUpperCase()))
+    .sort((a, b) => b.partNo.length - a.partNo.length);
+  if (candidates.length === 0) return null;
+  const maxLen = candidates[0].partNo.length;
+  return {
+    matches: candidates.filter(c => c.partNo.length === maxLen),
+    matchedPartNo: candidates[0].partNo,
+  };
+}
+
+function setVoiceTranscript(text, kind = "") {
+  const el = document.getElementById("voice-transcript");
+  el.textContent = text;
+  el.className = "voice-transcript" + (kind ? ` ${kind}` : "");
+}
+
+function getVoiceTarget() {
+  const checked = document.querySelector('input[name="voice-target"]:checked');
+  return checked ? checked.value : null;
+}
+
+// 「保存」と話した際は自動送信せず、対象(出庫/入庫)の登録ボタンまでスクロールして目立たせる
+// だけにとどめる。聞き間違いによる誤登録を防ぐため、最終的な送信は必ず手でボタンを押してもらう。
+function highlightSubmitButton(target) {
+  const btnId = target === "nyuko" ? "reg-nyuko-submit-btn" : "reg-shukko-submit-btn";
+  const btn = document.getElementById(btnId);
+  btn.scrollIntoView({ behavior: "smooth", block: "center" });
+  btn.classList.add("is-highlight");
+  setTimeout(() => btn.classList.remove("is-highlight"), 3000);
+}
+
+function handleVoiceUtterance(rawText) {
+  const target = getVoiceTarget();
+  if (!target) {
+    setVoiceTranscript("先に「出庫として追加」か「入庫として追加」を選んでください", "error");
+    return;
+  }
+
+  const normalized = normalizeVoiceText(rawText);
+  if (normalized.includes("保存")) {
+    setVoiceTranscript(`「保存」を認識しました。${target === "nyuko" ? "入庫" : "出庫"}登録ボタンをお確かめください`, "ok");
+    highlightSubmitButton(target);
+    return;
+  }
+
+  // まずパーツ番号として一致するものを探す(数量の数字が番号の末尾とくっつく問題を避けるため、
+  // 数量を抜き出すより先に番号を確定させる)。
+  const partNoFound = findPartNoInText(normalized);
+  if (partNoFound) {
+    if (partNoFound.matches.length > 1) {
+      setVoiceTranscript(`候補が複数あります(${partNoFound.matches.length}件)。検索欄に反映したので画面で選んでください:「${rawText}」`, "error");
+      document.getElementById("search-box").value = partNoFound.matchedPartNo;
+      applyInventoryFilter();
+      return;
+    }
+    const remain = normalized.toUpperCase().replace(partNoFound.matchedPartNo.toUpperCase(), "");
+    const { qty } = extractQty(remain);
+    const item = partNoFound.matches[0];
+    addItemToCart(item, qty);
+    setVoiceTranscript(`「${item.partName ?? item.partNo}」を${qty}個、明細に追加しました`, "ok");
+    return;
+  }
+
+  // パーツ番号として一致しなければ、パーツ名での検索にフォールバックする
+  // (この場合は先に数量表現を抜き出してから残りをキーワードにする)。
+  const { qty, rest } = extractQty(normalized);
+  const keyword = rest.trim();
+  if (!keyword) {
+    setVoiceTranscript(`聞き取れませんでした:「${rawText}」`, "error");
+    return;
+  }
+
+  const matches = findInventoryMatches(keyword);
+  if (matches.length === 1) {
+    addItemToCart(matches[0], qty);
+    setVoiceTranscript(`「${matches[0].partName ?? matches[0].partNo}」を${qty}個、明細に追加しました`, "ok");
+  } else if (matches.length === 0) {
+    setVoiceTranscript(`該当するパーツが見つかりませんでした:「${rawText}」(検索欄に反映したので確認してください)`, "error");
+    document.getElementById("search-box").value = keyword;
+    applyInventoryFilter();
+  } else {
+    setVoiceTranscript(`候補が複数あります(${matches.length}件)。検索欄に反映したので画面で選んでください:「${rawText}」`, "error");
+    document.getElementById("search-box").value = keyword;
+    applyInventoryFilter();
+  }
+}
+
+function startVoiceInput() {
+  if (!SpeechRecognitionClass) {
+    setVoiceTranscript("このブラウザは音声入力に対応していません(iPhoneのSafari等)。検索・バーコード読取をご利用ください", "error");
+    return;
+  }
+  if (!getVoiceTarget()) {
+    setVoiceTranscript("先に「出庫として追加」か「入庫として追加」を選んでください", "error");
+    return;
+  }
+  voiceRecognition = new SpeechRecognitionClass();
+  voiceRecognition.lang = "ja-JP";
+  voiceRecognition.continuous = true;
+  voiceRecognition.interimResults = true;
+
+  voiceRecognition.onresult = (event) => {
+    let finalText = "";
+    let interimText = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const text = event.results[i][0].transcript;
+      if (event.results[i].isFinal) finalText += text;
+      else interimText += text;
+    }
+    if (interimText) setVoiceTranscript(`(認識中)${interimText}`);
+    if (finalText) handleVoiceUtterance(finalText);
+  };
+
+  voiceRecognition.onerror = (event) => {
+    // no-speech(無音がしばらく続いた)は聞き取り継続中によく起きるだけなので表示しない
+    if (event.error === "no-speech") return;
+    setVoiceTranscript(`音声認識エラー: ${event.error}`, "error");
+  };
+
+  // 無音等で自動終了しても、ボタンで「終了」を押していない限りは自動的に再開する
+  // (店舗での連続作業中にボタンを何度も押し直さなくて済むように)。
+  voiceRecognition.onend = () => {
+    if (voiceListening) {
+      try { voiceRecognition.start(); } catch (e) { /* 既に開始中などは無視 */ }
+    }
+  };
+
+  voiceListening = true;
+  const btn = document.getElementById("voice-input-btn");
+  btn.textContent = "🎤 音声入力を終了";
+  btn.classList.add("is-listening");
+  setVoiceTranscript("聞き取り中です。「パーツ番号、数量」の順に話してください");
+  voiceRecognition.start();
+}
+
+function stopVoiceInput() {
+  voiceListening = false;
+  if (voiceRecognition) voiceRecognition.stop();
+  const btn = document.getElementById("voice-input-btn");
+  btn.textContent = "🎤 音声入力を開始";
+  btn.classList.remove("is-listening");
+  setVoiceTranscript("");
+}
+
+document.getElementById("voice-input-btn").addEventListener("click", () => {
+  if (voiceListening) stopVoiceInput();
+  else startVoiceInput();
+});
+
+if (!SpeechRecognitionClass) {
+  setVoiceTranscript("このブラウザは音声入力に未対応です(iPhoneのSafari等)。従来通り検索・バーコード読取をご利用ください", "error");
+}
 
 loadInventory();
 loadCategories();
