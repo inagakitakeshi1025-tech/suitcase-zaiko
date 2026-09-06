@@ -1162,6 +1162,14 @@ const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRe
 let voiceRecognition = null;
 let voiceListening = false;
 
+// 「えー、はいふん、いちまるいち」のように区切りながら話すと、ブラウザの音声認識は
+// 単語ごとに別々の確定結果(isFinal)を返すことがある。確定結果が来るたびに毎回すぐ
+// 解析すると、「番号」と「個数」がバラバラに解析されて噛み合わなくなるため、一定時間
+// (VOICE_DEBOUNCE_MS)発話が途切れるまで確定結果をつなげて蓄積し、まとめて解析する。
+let voiceBuffer = "";
+let voiceDebounceTimer = null;
+const VOICE_DEBOUNCE_MS = 1200;
+
 // 漢数字・和語の数え方(「ひとつ」等)にも対応する。音声認識はアラビア数字で返ってくることが
 // 多いが、和語の数え方で返ることもあるため両対応しておく。
 const KANJI_NUM = { "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10 };
@@ -1201,6 +1209,13 @@ function findInventoryMatches(keyword) {
   );
 }
 
+// パーツ番号中のハイフンは、音声だと「O199」のように省略されたり、「Oの199」のように
+// 「の」に置き換わって認識されたりすることが多いため、番号の一致判定ではハイフン相当の
+// 記号・「の」を無視して比較する。
+function stripPartNoSeparators(s) {
+  return s.replace(/[\-ー−―‐‑‒–―のノ]/g, "");
+}
+
 // 正規化済みテキストの中に、既存のパーツ番号がどこかに含まれていないか探す。
 // 「O-199」のように番号が数字で終わるパーツは、続けて話した数量の数字とくっついて
 // 「O-1992個」のようなテキストになりがちで、先に数量を抜き出そうとすると番号の末尾の
@@ -1208,9 +1223,9 @@ function findInventoryMatches(keyword) {
 // 一番長く一致するものをテキストから探し出す(番号を確定できれば、そこを取り除いた
 // 残りだけを数量として解析できる)。
 function findPartNoInText(text) {
-  const upperText = text.toUpperCase();
+  const strippedText = stripPartNoSeparators(text.toUpperCase());
   const candidates = inventoryCache
-    .filter(item => item.partNo && upperText.includes(item.partNo.toUpperCase()))
+    .filter(item => item.partNo && strippedText.includes(stripPartNoSeparators(item.partNo.toUpperCase())))
     .sort((a, b) => b.partNo.length - a.partNo.length);
   if (candidates.length === 0) return null;
   const maxLen = candidates[0].partNo.length;
@@ -1265,7 +1280,12 @@ function handleVoiceUtterance(rawText) {
       applyInventoryFilter();
       return;
     }
-    const remain = normalized.toUpperCase().replace(partNoFound.matchedPartNo.toUpperCase(), "");
+    // 番号の一致判定と同じく、ハイフン・「の」を無視した形で番号部分を取り除いてから
+    // 残り(数量表現)を解析する(番号側にだけハイフンが残っていると置換されず、数字が
+    // 数量に紛れ込んでしまうため)。
+    const strippedNormalized = stripPartNoSeparators(normalized.toUpperCase());
+    const strippedPartNo = stripPartNoSeparators(partNoFound.matchedPartNo.toUpperCase());
+    const remain = strippedNormalized.replace(strippedPartNo, "");
     const { qty } = extractQty(remain);
     const item = partNoFound.matches[0];
     addItemToCart(item, qty);
@@ -1297,6 +1317,14 @@ function handleVoiceUtterance(rawText) {
   }
 }
 
+// 蓄積しておいた発話をまとめて解析する。
+function flushVoiceBuffer() {
+  const text = voiceBuffer.trim();
+  voiceBuffer = "";
+  voiceDebounceTimer = null;
+  if (text) handleVoiceUtterance(text);
+}
+
 function startVoiceInput() {
   if (!SpeechRecognitionClass) {
     setVoiceTranscript("このブラウザは音声入力に対応していません(iPhoneのSafari等)。検索・バーコード読取をご利用ください", "error");
@@ -1319,8 +1347,16 @@ function startVoiceInput() {
       if (event.results[i].isFinal) finalText += text;
       else interimText += text;
     }
-    if (interimText) setVoiceTranscript(`(認識中)${interimText}`);
-    if (finalText) handleVoiceUtterance(finalText);
+    if (finalText) {
+      voiceBuffer += finalText;
+      setVoiceTranscript(`(認識中)${voiceBuffer}${interimText}`);
+      // 直前の確定結果からVOICE_DEBOUNCE_MS以内に次の確定結果が来た場合は、続けて話している
+      // とみなしてタイマーを延長する(単語ごとに区切られても1つの発話としてまとめて解析するため)。
+      if (voiceDebounceTimer) clearTimeout(voiceDebounceTimer);
+      voiceDebounceTimer = setTimeout(flushVoiceBuffer, VOICE_DEBOUNCE_MS);
+    } else if (interimText) {
+      setVoiceTranscript(`(認識中)${voiceBuffer}${interimText}`);
+    }
   };
 
   voiceRecognition.onerror = (event) => {
@@ -1332,6 +1368,8 @@ function startVoiceInput() {
   // 無音等で自動終了しても、ボタンで「終了」を押していない限りは自動的に再開する
   // (店舗での連続作業中にボタンを何度も押し直さなくて済むように)。
   voiceRecognition.onend = () => {
+    // 途中で切れても、溜まっている分は捨てずに解析してから再開する
+    if (voiceDebounceTimer) { clearTimeout(voiceDebounceTimer); flushVoiceBuffer(); }
     if (voiceListening) {
       try { voiceRecognition.start(); } catch (e) { /* 既に開始中などは無視 */ }
     }
@@ -1347,6 +1385,7 @@ function startVoiceInput() {
 
 function stopVoiceInput() {
   voiceListening = false;
+  if (voiceDebounceTimer) { clearTimeout(voiceDebounceTimer); flushVoiceBuffer(); }
   if (voiceRecognition) voiceRecognition.stop();
   const btn = document.getElementById("voice-input-btn");
   btn.textContent = "🎤 音声入力を開始";
