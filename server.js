@@ -117,6 +117,35 @@ app.use((req, res, next) => {
   res.redirect("/login");
 });
 
+// お知らせ(更新点)。knowledge/お知らせ.md を「## 見出し」ごとに区切って返す。
+// 内容はClaudeがファイルへ追記して更新する。画面側はlocalStorageで既読を管理する。
+const NOTICE_FILE = path.join(__dirname, "knowledge", "お知らせ.md");
+app.get("/api/notices", (req, res) => {
+  let text = "";
+  try {
+    text = fs.readFileSync(NOTICE_FILE, "utf8");
+  } catch (e) {
+    return res.json({ notices: [], latestId: null });
+  }
+  const notices = [];
+  // 最初の「## 」より前(タイトル・説明文)は捨てる。
+  const parts = text.split(/^##\s+/m).slice(1);
+  for (const part of parts) {
+    const nl = part.indexOf("\n");
+    const heading = (nl === -1 ? part : part.slice(0, nl)).trim();
+    const body = (nl === -1 ? "" : part.slice(nl + 1)).trim();
+    if (!heading) continue;
+    const m = heading.match(/^(\d{4}-\d{2}-\d{2})\s+(.*)$/);
+    notices.push({
+      id: heading,
+      date: m ? m[1] : "",
+      title: m ? m[2] : heading,
+      body,
+    });
+  }
+  res.json({ notices, latestId: notices.length ? notices[0].id : null });
+});
+
 app.get("/api/inventory", async (req, res) => {
   try {
     res.json(await kintone.getInventoryList());

@@ -66,6 +66,17 @@ main {
   margin: 0 auto;
 }
 
+/* お知らせパネル(notice-panel.js)。mainと横幅・左右の余白を揃えて表示する。 */
+#noticePanel {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 16px 24px 0;
+}
+
+@media (max-width: 640px) {
+  #noticePanel { padding: 12px 12px 0; }
+}
+
 .layout {
   display: flex;
   align-items: flex-start;

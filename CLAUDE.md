@@ -19,8 +19,12 @@ Claude Codeセッションのための引き継ぎ情報。ここに書いた内
 - `kintone.js`: kintone REST APIとの通信(在庫計算、出庫・入庫登録、提携店依頼の作成・処理、
   PDF生成の呼び出し)。各kintoneアプリの役割・フィールド設計の注意点はファイル冒頭のコメント参照
 - `pdf.js`: 納品書・請求書PDFの組み立て(pdfmake)
-- `www/`: フロントエンド(index.html / login.html / app.js / style.css)
+- `www/`: フロントエンド(index.html / login.html / app.js / style.css / notice-panel.js)
 - `.env.example`: 必要な環境変数の一覧と説明(実際の値は`.env`。Gitには含めない)
+- `knowledge/お知らせ.md`: アプリ上部の「お知らせ」パネルに出る更新履歴。新しい項目を上に
+  `## YYYY-MM-DD タイトル`の見出し＋本文で追記していく(`GET /api/notices`がこれを読んで返す)。
+  line-reply-assistantの同名の仕組みを踏襲したもので、既読管理はブラウザのlocalStorage
+  (キー`zaiko_notice_seen`)。新機能を追加したら、このファイルにも1項目書き足すこと。
 
 ## 環境変数・データについて
 
