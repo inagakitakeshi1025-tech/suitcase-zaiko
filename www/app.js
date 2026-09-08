@@ -72,6 +72,31 @@ function lowestMargin(item, commonThreshold) {
   return Math.min(...STORES.map(store => storeMargin(item, store, commonThreshold)));
 }
 
+// パーツ番号の自然順比較(例: "E-401"の後に"E-4010"ではなく"E-402"が来るように、
+// 数字の並びは文字列としてではなく数値として比較する)。
+function comparePartNo(a, b) {
+  const tokenize = s => String(s ?? "").match(/\d+|\D+/g) || [];
+  const ta = tokenize(a);
+  const tb = tokenize(b);
+  const len = Math.max(ta.length, tb.length);
+  for (let i = 0; i < len; i++) {
+    const x = ta[i];
+    const y = tb[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const xIsNum = /^\d+$/.test(x);
+    const yIsNum = /^\d+$/.test(y);
+    if (xIsNum && yIsNum) {
+      const diff = Number(x) - Number(y);
+      if (diff !== 0) return diff;
+    } else {
+      const diff = x.localeCompare(y, "ja");
+      if (diff !== 0) return diff;
+    }
+  }
+  return 0;
+}
+
 function applyInventoryFilter() {
   const category = document.getElementById("category-select").value;
   const keyword = document.getElementById("search-box").value.trim();
@@ -95,6 +120,9 @@ function applyInventoryFilter() {
   } else if (stockFilter === "low-toyota") {
     list = list.filter(item => isOnlyStoreLow(item, "豊田倉庫", commonThreshold));
     list = [...list].sort((a, b) => storeMargin(a, "豊田倉庫", commonThreshold) - storeMargin(b, "豊田倉庫", commonThreshold));
+  } else {
+    // 「すべて表示」時(検索結果も含む)はパーツ番号の自然順で並べる。
+    list = [...list].sort((a, b) => comparePartNo(a.partNo, b.partNo));
   }
   renderInventory(list);
 }
