@@ -24,6 +24,14 @@ const SESSION_SECRET = process.env.SESSION_SECRET || crypto.createHash("sha256")
 const SESSION_COOKIE = "zaiko_session";
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30日間はログインし直さなくていいようにする
 
+// 受付アシスタント(line-reply-assistant)からのシングルサインオン(任意設定)。
+// 両方セットすると、①未ログインで直接開いたときは自前のログイン画面ではなく受付アシスタントの
+// ログイン画面に飛ばし、②受付アシスタント側が発行した短命トークン(?sso=)を検証できたら
+// このアプリ自身のログイン画面を経由せずセッションCookieを発行する。どちらか未設定なら、
+// これまで通りこのアプリ自身のログイン画面(BASIC_AUTH_USER/PASSWORD)が使われる。
+const RECEPTION_LOGIN_URL = process.env.RECEPTION_LOGIN_URL;
+const SSO_SHARED_SECRET = process.env.SSO_SHARED_SECRET;
+
 function timingSafeStringEqual(a, b) {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -48,6 +56,19 @@ function isValidSessionToken(token) {
   return hmac.length === expected.length && timingSafeStringEqual(hmac, expected);
 }
 
+// 受付アシスタントが発行した ?sso= トークンの検証(形式・署名・有効期限はセッションと同じ仕組み)。
+function isValidSsoToken(token) {
+  if (!SSO_SHARED_SECRET || !token) return false;
+  const dotIdx = token.indexOf(".");
+  if (dotIdx === -1) return false;
+  const expiresAtStr = token.slice(0, dotIdx);
+  const hmac = token.slice(dotIdx + 1);
+  const expiresAt = Number(expiresAtStr);
+  if (!expiresAt || Date.now() > expiresAt) return false;
+  const expected = crypto.createHmac("sha256", SSO_SHARED_SECRET).update(expiresAtStr).digest("hex");
+  return hmac.length === expected.length && timingSafeStringEqual(hmac, expected);
+}
+
 function parseCookies(req) {
   const header = req.headers.cookie;
   const cookies = {};
@@ -69,6 +90,24 @@ app.disable("x-powered-by");
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// 受付アシスタントから ?sso=トークン 付きで開かれた場合、このアプリ自身のログイン画面を
+// 経由せず自動でセッションCookieを発行する(トークンをURLに残さないよう外してリダイレクト)。
+app.use((req, res, next) => {
+  if (req.query.sso && isValidSsoToken(req.query.sso)) {
+    const expiresAt = Date.now() + SESSION_MAX_AGE_MS;
+    const secure = isRequestSecure(req);
+    res.cookie(SESSION_COOKIE, signSession(expiresAt), {
+      httpOnly: true,
+      secure,
+      sameSite: secure ? "none" : "lax",
+      maxAge: SESSION_MAX_AGE_MS,
+      path: "/",
+    });
+    return res.redirect(req.path);
+  }
+  next();
+});
 
 app.get("/login", (req, res) => {
   const cookies = parseCookies(req);
@@ -108,11 +147,17 @@ app.get("/logout", (req, res) => {
 });
 
 // アプリ全体にかかる簡易パスワード認証(社外にURLを公開する際の最低限のアクセス制限)。
+// RECEPTION_LOGIN_URLが設定されていれば、自前のログイン画面の代わりに受付アシスタントの
+// ログイン画面へ飛ばす(ログイン後、受付アシスタントが?ssoトークン付きで戻してくれる)。
+// 自前の/loginページ自体は消していないので、緊急時はURLを直接開けば従来通り使える。
 app.use((req, res, next) => {
   const cookies = parseCookies(req);
   if (isValidSessionToken(cookies[SESSION_COOKIE])) return next();
   if (req.path.startsWith("/api/")) {
     return res.status(401).json({ error: "ログインが必要です" });
+  }
+  if (RECEPTION_LOGIN_URL) {
+    return res.redirect(`${RECEPTION_LOGIN_URL.replace(/\/$/, "")}/login?next=zaiko`);
   }
   res.redirect("/login");
 });

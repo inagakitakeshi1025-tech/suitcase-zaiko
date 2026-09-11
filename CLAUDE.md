@@ -26,6 +26,26 @@ Claude Codeセッションのための引き継ぎ情報。ここに書いた内
   line-reply-assistantの同名の仕組みを踏襲したもので、既読管理はブラウザのlocalStorage
   (キー`zaiko_notice_seen`)。新機能を追加したら、このファイルにも1項目書き足すこと。
 
+## 受付アシスタント(line-reply-assistant)からのシングルサインオン
+
+このアプリは受付アシスタント(line-reply-assistant)のホーム画面・受信箱からiframeで開かれる
+運用を想定している(社内向けポータル統合の一環、別タブに遷移させない方針)。`server.js`に
+以下の仕組みが入っている。
+
+- 未ログイン状態でこのアプリを直接開くと、環境変数`RECEPTION_LOGIN_URL`が設定されていれば
+  自前のログイン画面の代わりに受付アシスタントのログイン画面(`<URL>/login?next=zaiko`)へ
+  リダイレクトする。受付アシスタント側でログインすると、短命(5分)の署名付きトークンを
+  `?sso=`に付けてこのアプリへ自動的に戻してくれる(`src/zaikoSso.js`、line-reply-assistant側)。
+  このアプリはトークンを検証できたら、通常ログインと同じセッションCookie(`zaiko_session`)を
+  自動発行する。
+- トークンの検証には環境変数`SSO_SHARED_SECRET`(ランダムな共有シークレット)を使う。
+  **line-reply-assistant側の`.env`の`SSO_SHARED_SECRET`と完全に同じ値にする必要がある**
+  (Renderでは両サービスのダッシュボードにそれぞれ同じ値を登録する)。
+- `RECEPTION_LOGIN_URL`/`SSO_SHARED_SECRET`のどちらかが未設定なら、この仕組みは働かず
+  従来通りこのアプリ自身のログイン画面(`BASIC_AUTH_USER`/`PASSWORD`)が使われる。自前の
+  `/login`ページ自体は削除しておらず、URLを直接開けば受付アシスタントを経由せず今まで通り
+  ログインできる(受付アシスタント側に障害があった場合の抜け道として残してある)。
+
 ## 環境変数・データについて
 
 - ローカルの`.env`は本番のkintoneアプリに直結しており、開発用の別環境は無い。ローカルで動かす
